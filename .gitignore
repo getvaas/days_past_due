@@ -1,0 +1,32 @@
+# Credenciales y entornos
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Salidas generadas por los notebooks
+dpd_detalle_cuotas.csv
+dpd_por_contrato.csv
+dpd_por_caso.csv
+dpd_*.csv
+
+# Backups de Excel
+*.original.xlsx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
