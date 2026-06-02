@@ -72,6 +72,12 @@ def _parse_args(argv: list[str]) -> RunConfig:
         action="store_true",
         help="Solo prueba conexión y cuenta filas para el company_id; sale.",
     )
+    p.add_argument(
+        "--grace-days",
+        type=int,
+        default=1,
+        help="Días calendario de gracia tras el vencimiento antes de contar mora. Default: 1.",
+    )
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args(argv)
 
@@ -87,6 +93,7 @@ def _parse_args(argv: list[str]) -> RunConfig:
             mode=args.mode,
             partial_payment_counts=args.partial_counts,
             calculation_date=args.calculation_date,
+            grace_days=args.grace_days,
         ),
         args.print_summary,
         args.dry_run,

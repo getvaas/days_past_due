@@ -70,7 +70,7 @@ def _dpd_for_row(
     paid = total_paid >= gross_amount
     if paid:
         return 0, Decimal(0)
-    days_late = (cfg.calculation_date - installment_date).days
+    days_late = (cfg.calculation_date - installment_date).days - cfg.grace_days
     dpd = max(days_late, 0)
     arrears = gross_amount - total_paid
     if arrears < 0:

@@ -91,8 +91,8 @@ def _apply_pool_to_installment(pool: Decimal, components: dict) -> tuple:
     return pool, applied
 
 
-def _dpd(installment_date: date, calc_date: date) -> int:
-    return max((calc_date - installment_date).days, 0)
+def _dpd(installment_date: date, calc_date: date, grace_days: int = 1) -> int:
+    return max((calc_date - installment_date).days - grace_days, 0)
 
 
 def compute_from_data(
@@ -162,7 +162,7 @@ def compute_from_data(
                 dpd_current = 0
                 arrears = Decimal(0)
             else:
-                dpd_current = _dpd(inst["installment_date"], cfg.calculation_date)
+                dpd_current = _dpd(inst["installment_date"], cfg.calculation_date, cfg.grace_days)
                 arrears = gross - applied
                 if arrears < 0:
                     arrears = Decimal(0)
