@@ -19,6 +19,8 @@ dpd_detalle_cuotas.csv
 dpd_por_contrato.csv
 dpd_por_caso.csv
 dpd_*.csv
+resultado_revision.xlsx
+tests/_dirty_test.xlsx
 
 # Backups de Excel
 *.original.xlsx
