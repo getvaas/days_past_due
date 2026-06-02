@@ -1,12 +1,12 @@
-"""DPD job entry point.
+"""DPD job entry point — integración MySQL.
 
 scheduled_payments_installments.company_code (string) y payment_tape.company_id
 (numérico) no siempre coinciden, así que ambos son flags obligatorios.
 
 Examples:
-    python -m dpd.main --company-id 42 --company-code 42 --mode join
-    python -m dpd.main --company-id 86 --company-code sistecredito --mode cascade --partial-counts
-    python -m dpd.main --company-id 86 --company-code sistecredito --mode cascade --date 2026-04-30
+    python -m dpd.integrations.mysql_runner --company-id 42 --company-code 42 --mode join
+    python -m dpd.integrations.mysql_runner --company-id 86 --company-code sistecredito --mode cascade
+    python -m dpd.integrations.mysql_runner --company-id 86 --company-code sistecredito --mode cascade --date 2026-04-30
 """
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ import time
 from datetime import date, datetime
 
 from . import queries
-from .config import DBConfig, RunConfig
 from .db import connect, cursor
 from .migrations import ensure_dpd_columns
-from .modes import cascade_fifo, join_installment
 from .updater import apply_results
+from ..config import DBConfig, RunConfig
+from ..modes import cascade_fifo, join_installment
 
 log = logging.getLogger("dpd")
 

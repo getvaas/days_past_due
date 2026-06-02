@@ -7,7 +7,7 @@ from typing import Iterator
 import pymysql
 import pymysql.cursors
 
-from .config import DBConfig
+from ..config import DBConfig
 
 
 def connect(cfg: DBConfig):

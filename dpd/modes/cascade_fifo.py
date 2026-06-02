@@ -23,7 +23,6 @@ from decimal import Decimal
 from typing import Iterable, Iterator
 
 from ..config import RunConfig
-from ..db import cursor
 
 log = logging.getLogger(__name__)
 
@@ -176,6 +175,7 @@ def compute_from_data(
 
 def compute(conn, cfg: RunConfig) -> Iterator[dict]:
     """Yield {id, dpd_current, amount_in_arrears} por cuota — desde la BD."""
+    from ..integrations.db import cursor
     with cursor(conn) as cur:
         cur.execute(INSTALLMENTS_SQL, {"company_code": cfg.company_code})
         installments = cur.fetchall()
