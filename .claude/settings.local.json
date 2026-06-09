@@ -16,7 +16,21 @@
       "Bash(python3 -c ' *)",
       "Bash(python3)",
       "Bash(jupyter nbconvert *)",
-      "Bash(python3 -m jupyter nbconvert --to notebook --execute revisar_archivos.ipynb --output revisar_archivos.ipynb)"
+      "Bash(python3 -m jupyter nbconvert --to notebook --execute revisar_archivos.ipynb --output revisar_archivos.ipynb)",
+      "Bash(python3 -c \"import jupyter, nbconvert, pandas, openpyxl\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(python3.10 --version)",
+      "Bash(python3.12 --version)",
+      "Bash(python3 -m pip list)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/python -m pip install --upgrade pip -q)",
+      "Bash(.venv/bin/python --version)",
+      "Bash(echo \"venv created with $\\(.venv/bin/python --version\\)\")",
+      "Bash(.venv/bin/python -c \"import pandas, openpyxl, nbconvert, nbclient, pymysql; print\\('pandas', pandas.__version__\\); print\\('all ok'\\)\")",
+      "Bash(.venv/bin/jupyter nbconvert *)",
+      "Bash(.venv/bin/python -W error::SyntaxWarning -c \"import dpd.excel_runner; print\\('import limpio, sin SyntaxWarning'\\)\")",
+      "Bash(docker --version)",
+      "Bash(.venv/bin/python -m dpd.integrations.db_excel_runner --help)"
     ]
   }
 }

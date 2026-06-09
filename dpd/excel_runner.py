@@ -1,4 +1,4 @@
-"""Ejecutor de DPD sobre archivos Excel (sin MySQL).
+r"""Ejecutor de DPD sobre archivos Excel (sin MySQL).
 
 Punto de entrada alternativo al job de BD para cuando los datos
 llegan como archivos planos. Sirve tanto como módulo importable
@@ -70,18 +70,16 @@ def _ref_to_str(s: pd.Series) -> pd.Series:
     return s.astype(str)
 
 
-def load_schedule(
-    path: str,
-    sheet_name: Optional[str] = None,
-) -> pd.DataFrame:
-    """Carga y sanitiza la hoja de scheduled_payments_installments.
+def sanitize_schedule(df: pd.DataFrame) -> pd.DataFrame:
+    """Sanitiza un DataFrame crudo de scheduled_payments_installments.
 
+    Mismo tratamiento sin importar el origen (Excel o MySQL):
     - Convierte `date` a datetime.date
     - Normaliza borrower_installment_reference a str
-    - Asigna id sintético si no viene del archivo
+    - Asigna id sintético si no viene
     - Rellena buckets vacíos con gross_amount → principal_amount
     """
-    df = _load_sheet(path, sheet_name, SCHEDULE_SHEET_FALLBACKS)
+    df = df.copy()
     df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
     df["borrower_installment_reference"] = _ref_to_str(df["borrower_installment_reference"])
 
@@ -106,17 +104,23 @@ def load_schedule(
     return df
 
 
-def load_payment_tape(
+def load_schedule(
     path: str,
     sheet_name: Optional[str] = None,
 ) -> pd.DataFrame:
-    """Carga y sanitiza la hoja de Payment_Tape.
+    """Carga la hoja de scheduled_payments_installments desde Excel y la sanitiza."""
+    return sanitize_schedule(_load_sheet(path, sheet_name, SCHEDULE_SHEET_FALLBACKS))
 
+
+def sanitize_payment_tape(df: pd.DataFrame) -> pd.DataFrame:
+    """Sanitiza un DataFrame crudo de Payment_Tape.
+
+    Mismo tratamiento sin importar el origen (Excel o MySQL):
     - Convierte payment_date a datetime.date
     - Normaliza borrower_installment_reference a str
-    - Intenta rescatar la referencia de cuota desde columnas Unnamed si está vacía
+    - Intenta rescatar la referencia de cuota desde columnas Unnamed (solo Excel)
     """
-    df = _load_sheet(path, sheet_name, PT_SHEET_FALLBACKS)
+    df = df.copy()
     df["payment_date"] = pd.to_datetime(df["payment_date"], errors="coerce").dt.date
 
     if (
@@ -136,6 +140,14 @@ def load_payment_tape(
 
     df["borrower_installment_reference"] = _ref_to_str(df["borrower_installment_reference"])
     return df
+
+
+def load_payment_tape(
+    path: str,
+    sheet_name: Optional[str] = None,
+) -> pd.DataFrame:
+    """Carga la hoja de Payment_Tape desde Excel y la sanitiza."""
+    return sanitize_payment_tape(_load_sheet(path, sheet_name, PT_SHEET_FALLBACKS))
 
 
 # ─── Conversión a dicts para los modos ───────────────────────────────────────
@@ -213,6 +225,25 @@ def run_from_excel(
     pay_df = load_payment_tape(payment_tape_path, payment_tape_sheet)
     print(f"  → {len(pay_df)} pagos | {pay_df['borrower_contract_id'].nunique()} contratos")
 
+    return compute_dpd(
+        sched_df, pay_df, calc_date,
+        mode=mode, grace_days=grace_days, partial_counts=partial_counts,
+    )
+
+
+def compute_dpd(
+    sched_df: pd.DataFrame,
+    pay_df: pd.DataFrame,
+    calc_date: date,
+    mode: str = "cascade",
+    grace_days: int = 1,
+    partial_counts: bool = False,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Corre DPD sobre DataFrames ya sanitizados y devuelve (detail_df, summary_df).
+
+    Núcleo de cálculo compartido entre el origen Excel (run_from_excel) y el
+    origen MySQL (dpd.integrations.db_excel_runner). No lee archivos ni la BD.
+    """
     insts = _installments_from_df(sched_df)
     pays = _payments_from_df(pay_df)
 
