@@ -32,3 +32,13 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Outputs generados
+resultado_dpd.xlsx
+resultado_*.xlsx
+
+# Claude / sesiones locales
+.claude/
+
+# Notebooks de análisis ad-hoc
+analisis_*.ipynb

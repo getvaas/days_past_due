@@ -60,6 +60,17 @@ def _process_message(msg: InboundMessage) -> None:
     payments_df = read_payments(company_id=msg.target_id)
     log.info("DB: %d cuotas | %d pagos", len(spi_df), len(payments_df))
 
+    if spi_df.empty:
+        # El schedule no existe en la BD para esta company.
+        # TODO: construir SPI desde el loan tape e insertarlo.
+        # Pendiente: definir el mapeo loan_tape → scheduled_payments_installments
+        # (qué columnas del loan tape corresponden a date, gross_amount, etc.)
+        raise NotImplementedError(
+            f"No existen registros en scheduled_payments_installments para "
+            f"company={msg.target_id}. La creación automática desde el loan tape "
+            "aún no está implementada — pendiente definir schema del loan tape."
+        )
+
     calc_date = date.today()
 
     # 3. Calcular productos solicitados
