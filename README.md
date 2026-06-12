@@ -172,7 +172,7 @@ dpd/
 │   └── vpn.py               # valor presente neto
 └── integrations/
     ├── db.py                # wrapper PyMySQL (SQL crudo, sin ORM)
-    ├── queries.py
+    ├── queries.py           # summary queries por contrato (solo lectura)
     └── db_excel_runner.py   # MySQL (solo lectura) → Excel
 ```
 
@@ -189,3 +189,5 @@ Smoke test de integración contra un MySQL descartable (requiere Docker):
 ```
 
 Levanta un contenedor `dpd-mysql`, aplica `tests/schema.sql` + `tests/seed.sql`, corre el job e imprime `tests/verify.sql`. Borralo con `docker rm -f dpd-mysql`.
+
+> ⚠ **Pendiente:** [tests/run.sh](tests/run.sh) todavía invoca `python -m dpd.main`, un entry point que se eliminó en el refactor a `integrations/`. Mientras no se actualice, para correr DPD contra MySQL usá [dpd/integrations/db_excel_runner.py](dpd/integrations/db_excel_runner.py) (ver sección Uso §2).
