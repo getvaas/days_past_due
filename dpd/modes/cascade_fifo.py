@@ -152,10 +152,11 @@ def compute_from_data(
 
             pool, applied = _apply_pool_to_installment(pool, components)
 
+            threshold = Decimal(str(getattr(cfg, "paid_threshold", 1.0)))
             if cfg.partial_payment_counts:
                 paid = applied > 0
             else:
-                paid = applied >= gross
+                paid = applied >= gross * threshold
 
             if paid:
                 dpd_current = 0

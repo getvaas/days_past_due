@@ -65,8 +65,8 @@ def _dpd_for_row(
     total_paid: Decimal,
     cfg: RunConfig,
 ) -> tuple:
-    # Spec: ambos modos del join usan el mismo umbral (>= gross_amount) para "pagada".
-    paid = total_paid >= gross_amount
+    threshold = Decimal(str(getattr(cfg, "paid_threshold", 1.0)))
+    paid = total_paid >= gross_amount * threshold
     if paid:
         return 0, Decimal(0)
     days_late = (cfg.calculation_date - installment_date).days - cfg.grace_days

@@ -73,4 +73,5 @@ class RunConfig:
     mode: str  # "join" | "cascade"
     partial_payment_counts: bool
     calculation_date: date
-    grace_days: int = 1  # días calendario de gracia después del vencimiento
+    grace_days: int = 1      # días calendario de gracia después del vencimiento
+    paid_threshold: float = 1.0  # fracción mínima pagada para considerar cuota al día (ej. 0.8 = 80%)

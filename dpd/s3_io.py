@@ -37,6 +37,23 @@ def read_loan_tape(s3_path: str) -> pd.DataFrame:
         return pd.read_csv(io.BytesIO(content))
 
 
+def try_read_loan_tape(s3_path: str) -> Optional[pd.DataFrame]:
+    """Lee el loan tape desde S3. Devuelve None si el objeto no existe (NoSuchKey).
+
+    Usado para leer el output anterior y recuperar dpd_max del run previo.
+    """
+    try:
+        return read_loan_tape(s3_path)
+    except Exception as exc:
+        # boto3 lanza ClientError con response["Error"]["Code"] == "NoSuchKey"
+        response = getattr(exc, "response", None)
+        if isinstance(response, dict):
+            code = response.get("Error", {}).get("Code", "")
+            if code == "NoSuchKey":
+                return None
+        raise
+
+
 def write_loan_tape(df: pd.DataFrame, s3_path: str) -> None:
     """Escribe el loan tape enriquecido en S3. Soporta .csv y .parquet."""
     bucket, key = _parse_s3_path(s3_path)

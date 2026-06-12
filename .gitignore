@@ -10,6 +10,11 @@ __pycache__/
 *.pyo
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.log
 
 # Jupyter
 .ipynb_checkpoints/
@@ -24,6 +29,9 @@ tests/_dirty_test.xlsx
 
 # Backups de Excel
 *.original.xlsx
+
+# Documentos de historias / análisis
+*.docx
 
 # OS
 .DS_Store

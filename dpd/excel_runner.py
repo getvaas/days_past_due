@@ -87,7 +87,7 @@ def sanitize_schedule(df: pd.DataFrame) -> pd.DataFrame:
     if "id" not in df.columns or df["id"].isna().all():
         df["id"] = df.index + 1
     else:
-        df["id"] = df["id"].fillna(df.index + 1).astype(int)
+        df["id"] = df["id"].fillna(pd.Series(df.index + 1, index=df.index)).astype(int)
 
     for col in BUCKET_COLS:
         if col not in df.columns:
@@ -154,14 +154,17 @@ def load_payment_tape(
 
 def _installments_from_df(df: pd.DataFrame) -> list[dict]:
     """Convierte schedule DataFrame a lista de dicts para compute_from_data().
-    Descarta filas con date NaT o gross_amount inválido."""
-    valid = df[df["date"].notna() & (df["gross_amount"].fillna(0) > 0)]
+    Descarta filas con date NaT o gross_amount inválido.
+    Acepta tanto 'date' como 'installment_date' como nombre de columna de fecha.
+    """
+    date_col = "installment_date" if "installment_date" in df.columns else "date"
+    valid = df[df[date_col].notna() & (df["gross_amount"].fillna(0) > 0)]
     return [
         {
             "id": int(r["id"]),
             "borrower_contract_id": r["borrower_contract_id"],
             "borrower_installment_reference": r["borrower_installment_reference"],
-            "installment_date": r["date"],
+            "installment_date": r[date_col],
             "gross_amount": r.get("gross_amount", 0),
             "guarantee_amount": r.get("guarantee_amount", 0),
             "principal_amount": r.get("principal_amount", 0),
