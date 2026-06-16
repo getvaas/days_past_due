@@ -1,0 +1,15 @@
+{
+  "version": "0.12.0",
+  "agents": [
+    "claude-code"
+  ],
+  "baseBranch": "develop",
+  "plugins": [],
+  "pluginVersions": {},
+  "paths": {
+    "docs": "docs",
+    "specs": "specs",
+    "run_tests": "./scripts/run-tests.sh",
+    "clean_test_cache": "./scripts/clean-test-cache.sh"
+  }
+}

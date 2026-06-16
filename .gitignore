@@ -50,3 +50,4 @@ resultado_*.xlsx
 
 # Notebooks de análisis ad-hoc
 analisis_*.ipynb
+.sdd/
