@@ -1,0 +1,6 @@
+project_name_camel_case   = "days-past-due"
+project_name_snake_case   = "days_past_due"
+component_name_camel_case = ""
+author                    = "danna@getvaas.com"
+cost_center               = "days-past-due"
+github_repository         = "DaysPastDue"
