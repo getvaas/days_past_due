@@ -1,15 +1,23 @@
 """Runtime config for the DPD job.
 
-DB credentials come from env vars (auto-loaded from .env in the repo root);
-calculation parameters come from the CLI (see main.py) and are passed around
-as a dataclass.
+DB credentials come from two sources depending on the environment:
+- **Local** (sin AWS_LAMBDA_FUNCTION_NAME): variables de entorno, auto-cargadas
+  desde el .env en la raíz del repo.
+- **Lambda** (AWS_LAMBDA_FUNCTION_NAME presente): se leen de un secret en AWS
+  Secrets Manager (nombre/ARN en PAYMENTS_SECRET_NAME).
+
+`DBConfig.load()` es el resolutor que elige la fuente según el entorno.
+Calculation parameters come from the CLI and are passed around as a dataclass.
 """
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def _load_dotenv(path: Path) -> None:
@@ -38,6 +46,55 @@ def _load_dotenv(path: Path) -> None:
 _load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
+# Claves esperadas dentro del JSON del secret de Payments (Secrets Manager).
+_SECRET_KEY_URL = "DATASOURCE___PAYMENTS_DB___URL"
+_SECRET_KEY_USER = "DATASOURCE___PAYMENTS_DB___USERNAME"
+_SECRET_KEY_PASSWORD = "DATASOURCE___PAYMENTS_DB___PASSWORD"
+
+
+def _parse_db_url(url: str) -> tuple[str, int, str]:
+    """Parsea una URL de conexión MySQL en (host, port, dbname).
+
+    Acepta `jdbc:mysql://host:3306/db`, `mysql://host:3306/db` y `host:3306/db`.
+    Puerto por defecto 3306 si no viene. Ignora query params (ej. ?useSSL=false).
+    """
+    raw = (url or "").strip()
+    if raw.lower().startswith("jdbc:"):
+        raw = raw[len("jdbc:"):]
+    # Si no hay esquema, anteponer '//' para que urlparse llene el netloc.
+    if "://" not in raw:
+        raw = "//" + raw
+
+    try:
+        parsed = urlparse(raw)
+        host = parsed.hostname
+        port = parsed.port or 3306
+    except ValueError:
+        host, port = None, 3306
+
+    dbname = parsed.path.lstrip("/") if host else ""
+    if not host or not dbname:
+        raise RuntimeError(
+            f"URL de base inválida: {url!r}. "
+            "Esperado host:puerto/base (ej. mysql://host:3306/payments_db)."
+        )
+    return host, port, dbname
+
+
+@lru_cache(maxsize=None)
+def _load_secret_values(secret_name: str) -> dict:
+    """Lee un secret de AWS Secrets Manager y devuelve su JSON como dict.
+
+    Cacheado: un solo GetSecretValue por secret_name por proceso (varias
+    conexiones en un mismo run no repiten la llamada a AWS).
+    """
+    import boto3
+
+    client = boto3.client("secretsmanager")
+    response = client.get_secret_value(SecretId=secret_name)
+    return json.loads(response["SecretString"])
+
+
 @dataclass(frozen=True)
 class DBConfig:
     host: str
@@ -45,6 +102,17 @@ class DBConfig:
     dbname: str
     user: str
     password: str
+
+    @classmethod
+    def load(cls) -> "DBConfig":
+        """Resuelve la config según el entorno.
+
+        En Lambda (AWS_LAMBDA_FUNCTION_NAME presente) lee Secrets Manager;
+        en local lee variables de entorno / .env.
+        """
+        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            return cls.from_secrets_manager()
+        return cls.from_env()
 
     @classmethod
     def from_env(cls) -> "DBConfig":
@@ -60,6 +128,38 @@ class DBConfig:
             dbname=os.environ["DB_NAME"],
             user=os.environ["DB_USER"],
             password=os.environ.get("DB_PASSWORD", ""),
+        )
+
+    @classmethod
+    def from_secrets_manager(cls, secret_name: str | None = None) -> "DBConfig":
+        """Construye la config leyendo el secret de Payments en Secrets Manager.
+
+        secret_name: nombre/ARN del secret. Si es None, se toma de PAYMENTS_SECRET_NAME.
+        """
+        name = secret_name or os.environ.get("PAYMENTS_SECRET_NAME")
+        if not name:
+            raise RuntimeError(
+                "Falta PAYMENTS_SECRET_NAME: no se puede leer el secret de la base "
+                "en Secrets Manager."
+            )
+
+        values = _load_secret_values(name)
+        missing = [
+            k for k in (_SECRET_KEY_URL, _SECRET_KEY_USER, _SECRET_KEY_PASSWORD)
+            if k not in values
+        ]
+        if missing:
+            raise RuntimeError(
+                f"El secret {name!r} no tiene las claves requeridas: {missing}."
+            )
+
+        host, port, dbname = _parse_db_url(values[_SECRET_KEY_URL])
+        return cls(
+            host=host,
+            port=port,
+            dbname=dbname,
+            user=values[_SECRET_KEY_USER],
+            password=values[_SECRET_KEY_PASSWORD],
         )
 
 

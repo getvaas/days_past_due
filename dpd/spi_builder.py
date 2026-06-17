@@ -364,7 +364,7 @@ def build_and_persist(
             f"Errores: {errors}"
         )
 
-    cfg = db_cfg or DBConfig.from_env()
+    cfg = db_cfg or DBConfig.load()
     conn = connect(cfg)
     try:
         total = _insert_batch(conn, company_code, all_installments)

@@ -70,7 +70,7 @@ WHERE company_id = %(company_id)s
 
 def read_schedule(company_code: str | int, db_cfg: Optional[DBConfig] = None) -> pd.DataFrame:
     """Lee todas las cuotas de scheduled_payments_installments para una company."""
-    cfg = db_cfg or DBConfig.from_env()
+    cfg = db_cfg or DBConfig.load()
     conn = connect(cfg)
     try:
         with cursor(conn) as cur:
@@ -87,7 +87,7 @@ def read_schedule(company_code: str | int, db_cfg: Optional[DBConfig] = None) ->
 
 def read_payments(company_id: int, db_cfg: Optional[DBConfig] = None) -> pd.DataFrame:
     """Lee todos los pagos de payment_tape para una company."""
-    cfg = db_cfg or DBConfig.from_env()
+    cfg = db_cfg or DBConfig.load()
     conn = connect(cfg)
     try:
         with cursor(conn) as cur:
@@ -111,7 +111,7 @@ def read_last_dates(
 
     Usado para poblar metadata.last_* en el mensaje de respuesta.
     """
-    cfg = db_cfg or DBConfig.from_env()
+    cfg = db_cfg or DBConfig.load()
     conn = connect(cfg)
     try:
         with cursor(conn) as cur:
