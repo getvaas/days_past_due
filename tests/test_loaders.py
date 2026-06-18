@@ -34,13 +34,13 @@ def _mock_db(rows):
 
 def test_load_schedule_reads_and_sanitizes():
     rows = [{
-        "id": 1, "company_code": 42, "borrower_contract_id": "C001",
+        "id": 1, "company_id": 42, "borrower_contract_id": "C001",
         "borrower_installment_reference": "C001-1", "date": "2026-02-01",
         "gross_amount": 1000, "guarantee_amount": 0, "principal_amount": 800,
         "interest_amount": 150, "tax_amount": 30, "fee_amount": 20,
     }]
     with _mock_db(rows):
-        df = excel_runner.load_schedule("sistecredito", db_cfg=DUMMY_CFG)
+        df = excel_runner.load_schedule(42, db_cfg=DUMMY_CFG)
 
     assert len(df) == 1
     assert df.loc[0, "date"] == dt.date(2026, 2, 1)            # sanitizado a date
@@ -49,15 +49,15 @@ def test_load_schedule_reads_and_sanitizes():
 
 def test_load_schedule_empty_returns_empty_df():
     with _mock_db([]):
-        df = excel_runner.load_schedule("nadie", db_cfg=DUMMY_CFG)
+        df = excel_runner.load_schedule(99, db_cfg=DUMMY_CFG)
     assert df.empty
 
 
-def test_load_schedule_filters_by_company_code():
+def test_load_schedule_filters_by_company_id():
     with _mock_db([]) as cur:
-        excel_runner.load_schedule("sistecredito", db_cfg=DUMMY_CFG)
+        excel_runner.load_schedule(42, db_cfg=DUMMY_CFG)
     sql, params = cur.execute.call_args[0]
-    assert params == {"company_code": "sistecredito"}
+    assert params == {"company_id": 42}
 
 
 def test_load_payment_tape_reads_and_sanitizes():

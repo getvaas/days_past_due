@@ -41,7 +41,7 @@ _PT_MIN_COLS = [
 SCHEDULE_SQL = """
 SELECT *
 FROM scheduled_payments_installments
-WHERE company_code = %(company_code)s
+WHERE company_id = %(company_id)s
 ORDER BY borrower_contract_id, `date` ASC, id ASC;
 """
 
@@ -98,10 +98,10 @@ def sanitize_schedule(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_schedule(
-    company_code: str,
+    company_id: int,
     db_cfg: Optional[DBConfig] = None,
 ) -> pd.DataFrame:
-    """Lee scheduled_payments_installments de payments_db (filtrada por company_code) y la sanitiza.
+    """Lee scheduled_payments_installments de payments_db (filtrada por company_id) y la sanitiza.
 
     Devuelve un DataFrame vacío si la compañía no tiene cuotas (el caller decide
     qué hacer, p.ej. generar el SPI).
@@ -110,7 +110,7 @@ def load_schedule(
     conn = connect(cfg)
     try:
         with cursor(conn) as cur:
-            cur.execute(SCHEDULE_SQL, {"company_code": str(company_code)})
+            cur.execute(SCHEDULE_SQL, {"company_id": int(company_id)})
             rows = cur.fetchall()
     finally:
         conn.close()
@@ -217,7 +217,6 @@ def compute_dpd(
 
     cfg_base = dict(
         company_id=0,
-        company_code="*",
         partial_payment_counts=partial_counts,
         calculation_date=calc_date,
         grace_days=grace_days,

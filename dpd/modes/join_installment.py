@@ -22,9 +22,6 @@ log = logging.getLogger(__name__)
 # LEFT JOIN para no perder cuotas sin pago. La subquery agrega payment_tape
 # por (borrower_contract_id, borrower_installment_reference).
 #
-# Nota: cada lado se filtra por su propia columna de company (payment_tape.company_id
-# numérico vs scheduled_payments_installments.company_code string), así que NO se
-# joinean por company — sí por contrato + referencia de cuota.
 SCHEDULE_WITH_PAYMENTS_SQL = """
 SELECT
     spi.id                                  AS id,
@@ -45,7 +42,7 @@ LEFT JOIN (
 ) p
   ON p.borrower_contract_id = spi.borrower_contract_id
  AND p.borrower_installment_reference = spi.borrower_installment_reference
-WHERE spi.company_code = %(company_code)s;
+WHERE spi.company_id = %(company_id)s;
 """
 
 
@@ -130,13 +127,13 @@ def compute(conn, cfg: RunConfig) -> Iterator[dict]:
     with cursor(conn) as cur:
         cur.execute(
             SCHEDULE_WITH_PAYMENTS_SQL,
-            {"company_id": cfg.company_id, "company_code": cfg.company_code},
+            {"company_id": cfg.company_id},
         )
         rows = cur.fetchall()
 
     log.info(
-        "join mode: %d installments fetched for company_code=%s / company_id=%s",
-        len(rows), cfg.company_code, cfg.company_id,
+        "join mode: %d installments fetched for company_id=%s",
+        len(rows), cfg.company_id,
     )
 
     # Ya viene pre-agregado por el SQL; emulamos la forma esperada por _dpd_for_row directamente.

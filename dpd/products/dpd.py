@@ -63,7 +63,6 @@ def compute(
 
     cfg = RunConfig(
         company_id=0,
-        company_code="*",
         mode=mode,
         partial_payment_counts=False,
         calculation_date=calc_date,

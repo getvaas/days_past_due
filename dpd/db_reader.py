@@ -19,7 +19,7 @@ from .integrations.db import connect, cursor
 SPI_LAST_DATE_SQL = """
 SELECT MAX(`date`) AS last_schedule_payment_date
 FROM scheduled_payments_installments
-WHERE company_code = %(company_code)s;
+WHERE company_id = %(company_id)s;
 """
 
 PAYMENTS_LAST_DATE_SQL = """
@@ -37,7 +37,6 @@ WHERE company_id = %(company_id)s
 
 
 def read_last_dates(
-    company_code: str | int,
     company_id: int,
     db_cfg: Optional[DBConfig] = None,
 ) -> dict[str, Optional[date]]:
@@ -49,7 +48,7 @@ def read_last_dates(
     conn = connect(cfg)
     try:
         with cursor(conn) as cur:
-            cur.execute(SPI_LAST_DATE_SQL, {"company_code": str(company_code)})
+            cur.execute(SPI_LAST_DATE_SQL, {"company_id": company_id})
             spi_row = cur.fetchone()
 
             cur.execute(PAYMENTS_LAST_DATE_SQL, {"company_id": company_id})

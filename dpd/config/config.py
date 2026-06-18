@@ -59,6 +59,11 @@ VAAS_SECRET_NAME = os.environ.get("VAAS_SECRET_NAME", "")
 # True cuando NO corre en Lambda (AWS inyecta AWS_LAMBDA_FUNCTION_NAME).
 LOCAL_ENV = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is None
 
+# ── AWS Batch ──
+BATCH_ROW_THRESHOLD: int = int(os.environ.get("BATCH_ROW_THRESHOLD", "5000"))
+BATCH_JOB_QUEUE: str = os.environ.get("BATCH_JOB_QUEUE", "")
+BATCH_JOB_DEFINITION: str = os.environ.get("BATCH_JOB_DEFINITION", "")
+
 # Cache mutable del token M2M; lo setea machine_to_machine.get_token().
 M2M_TOKEN = ""
 
@@ -182,11 +187,7 @@ class DBConfig:
 
 @dataclass(frozen=True)
 class RunConfig:
-    # company_id (numérico) filtra payment_tape.company_id;
-    # company_code (string) filtra scheduled_payments_installments.company_code.
-    # No siempre coinciden — ej. sistecredito = 86 en payment_tape, "sistecredito" en installments.
     company_id: int
-    company_code: str
     mode: str  # "join" | "cascade"
     partial_payment_counts: bool
     calculation_date: date

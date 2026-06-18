@@ -40,7 +40,7 @@ Contrato `C002`: cuotas 1, 2, 3 de 1000 c/u. Se pagan la 1 y la 3 (con sus refer
 
 ## Parámetros que afectan el cálculo
 
-Definidos en `RunConfig` ([dpd/config.py](../../dpd/config.py)):
+Definidos en `RunConfig` ([dpd/config.py](../../dpd/config/config.py)):
 
 | Parámetro | Default | Efecto |
 |-----------|---------|--------|

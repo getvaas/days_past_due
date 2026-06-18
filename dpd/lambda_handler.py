@@ -21,14 +21,15 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 
-from .clients.company_client import CompanyClient
+from . import config
+from .batch_submitter import submit_job
 from .db_reader import read_last_dates
 from .excel_runner import load_payment_tape, load_schedule
 from .models import InboundMessage, OutboundMessage
 from .products import dpd as product_dpd
 from .products import total_amount as product_total_amount
 from .products import vpn as product_vpn
-from .s3_io import read_loan_tape, try_read_loan_tape, write_loan_tape
+from .utils.s3 import read_loan_tape, try_read_loan_tape, write_loan_tape
 from .sns_publisher import publish_response
 from .spi_builder import LoanTapeColumns, build_and_persist
 
@@ -60,6 +61,27 @@ def _process_message(msg: InboundMessage) -> None:
     loan_tape = read_loan_tape(msg.input_file)
     log.info("Loan tape cargado: %d filas", len(loan_tape))
 
+    # Si el loan tape supera el umbral, derivar a AWS Batch y retornar.
+    if len(loan_tape) > config.BATCH_ROW_THRESHOLD:
+        log.info(
+            "Loan tape supera el umbral (%d > %d) — derivando a AWS Batch.",
+            len(loan_tape), config.BATCH_ROW_THRESHOLD,
+        )
+        payload = {
+            "origin": msg.origin,
+            "target": msg.target,
+            "job_id": msg.job_id,
+            "input_file": msg.input_file,
+            "output_file": msg.output_file,
+            "key": msg.key,
+            "target_type": msg.target_type,
+            "target_id": msg.target_id,
+            "rate_type": msg.rate_type,
+            "metadata": msg.metadata.to_dict(),
+        }
+        submit_job(payload, config.BATCH_JOB_QUEUE, config.BATCH_JOB_DEFINITION)
+        return
+
     # 2. Leer output previo para recuperar dpd_max histórico (puede no existir en el primer run)
     previous_output = try_read_loan_tape(msg.output_file)
     if previous_output is not None:
@@ -67,20 +89,10 @@ def _process_message(msg: InboundMessage) -> None:
     else:
         log.info("Sin output previo — dpd_max = dpd_current (primer run)")
 
-    # 3. Resolver compañía y leer datos de payments_db.
-    # El borrower_id del mensaje (target_id) es el company_id (filtra payment_tape).
-    # El company_code (filtra scheduled_payments_installments) se resuelve vía el
-    # Company Provider a partir del id.
+    # 3. Leer datos de payments_db usando company_id directo desde el evento.
     company_id = msg.target_id
-    company_code = CompanyClient().get_company_by_id(company_id)
-    if not company_code:
-        raise RuntimeError(
-            f"No se pudo resolver company_code para borrower_id={company_id} "
-            "(Company Provider)."
-        )
-    log.info("Compañía resuelta: company_id=%s | company_code=%s", company_id, company_code)
 
-    spi_df = load_schedule(company_code)
+    spi_df = load_schedule(company_id)
     payments_df = load_payment_tape(company_id)
     log.info("DB: %d cuotas | %d pagos", len(spi_df), len(payments_df))
 
@@ -103,8 +115,8 @@ def _process_message(msg: InboundMessage) -> None:
         )
         spi_df = build_and_persist(
             loan_tape=loan_tape,
-            company_code=company_code,
-            columns=LoanTapeColumns(),  # nombres de columna por defecto
+            company_id=company_id,
+            columns=LoanTapeColumns(),
         )
         log.info("SPI generado y persistido: %d cuotas", len(spi_df))
 
@@ -150,10 +162,7 @@ def _process_message(msg: InboundMessage) -> None:
     log.info("Output escrito en %s", msg.output_file)
 
     # 7. Construir y publicar respuesta
-    last_dates = read_last_dates(
-        company_code=company_code,
-        company_id=company_id,
-    )
+    last_dates = read_last_dates(company_id=company_id)
 
     response = OutboundMessage.from_inbound(msg)
     response.metadata.last_payment_tape_date = last_dates["last_payment_tape_date"]
