@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 # Nota: cada lado se filtra por su propia columna de company (payment_tape.company_id
 # numérico vs scheduled_payments_installments.company_code string), así que NO se
 # joinean por company — sí por contrato + referencia de cuota.
-SELECT_SQL = """
+SCHEDULE_WITH_PAYMENTS_SQL = """
 SELECT
     spi.id                                  AS id,
     spi.borrower_contract_id                AS borrower_contract_id,
@@ -129,7 +129,7 @@ def compute(conn, cfg: RunConfig) -> Iterator[dict]:
     from ..integrations.db import cursor
     with cursor(conn) as cur:
         cur.execute(
-            SELECT_SQL,
+            SCHEDULE_WITH_PAYMENTS_SQL,
             {"company_id": cfg.company_id, "company_code": cfg.company_code},
         )
         rows = cur.fetchall()

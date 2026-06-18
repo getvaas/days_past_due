@@ -289,8 +289,8 @@ def build_and_persist(
         columns:      Mapeo de nombres de columnas del loan tape.
 
     Returns:
-        DataFrame con todos los installments generados, en el mismo formato
-        que devuelve `db_reader.read_schedule` (columna installment_date).
+        DataFrame con todos los installments generados, en formato sanitizado
+        (columna installment_date).
 
     Raises:
         ValueError: Si el loan tape no tiene las columnas requeridas.
@@ -379,7 +379,7 @@ def build_and_persist(
     finally:
         conn.close()
 
-    # Devolver como DataFrame en el mismo formato que db_reader.read_schedule
+    # Devolver como DataFrame con installment_date para continuar el run sin releer la BD
     return pd.DataFrame([
         {
             "id": None,  # asignado por MySQL (auto-increment)

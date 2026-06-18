@@ -21,7 +21,9 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 
-from .db_reader import read_last_dates, read_payments, read_schedule
+from .clients.company_client import CompanyClient
+from .db_reader import read_last_dates
+from .excel_runner import load_payment_tape, load_schedule
 from .models import InboundMessage, OutboundMessage
 from .products import dpd as product_dpd
 from .products import total_amount as product_total_amount
@@ -65,11 +67,21 @@ def _process_message(msg: InboundMessage) -> None:
     else:
         log.info("Sin output previo — dpd_max = dpd_current (primer run)")
 
-    # 3. Leer datos de MySQL
-    # company_code y company_id pueden diferir — por ahora usamos target_id para ambos.
-    # TODO: cuando el mensaje diferencie company_code de company_id, actualizar.
-    spi_df = read_schedule(company_code=msg.target_id)
-    payments_df = read_payments(company_id=msg.target_id)
+    # 3. Resolver compañía y leer datos de payments_db.
+    # El borrower_id del mensaje (target_id) es el company_id (filtra payment_tape).
+    # El company_code (filtra scheduled_payments_installments) se resuelve vía el
+    # Company Provider a partir del id.
+    company_id = msg.target_id
+    company_code = CompanyClient().get_company_by_id(company_id)
+    if not company_code:
+        raise RuntimeError(
+            f"No se pudo resolver company_code para borrower_id={company_id} "
+            "(Company Provider)."
+        )
+    log.info("Compañía resuelta: company_id=%s | company_code=%s", company_id, company_code)
+
+    spi_df = load_schedule(company_code)
+    payments_df = load_payment_tape(company_id)
     log.info("DB: %d cuotas | %d pagos", len(spi_df), len(payments_df))
 
     if spi_df.empty:
@@ -91,7 +103,7 @@ def _process_message(msg: InboundMessage) -> None:
         )
         spi_df = build_and_persist(
             loan_tape=loan_tape,
-            company_code=str(msg.target_id),
+            company_code=company_code,
             columns=LoanTapeColumns(),  # nombres de columna por defecto
         )
         log.info("SPI generado y persistido: %d cuotas", len(spi_df))
@@ -139,8 +151,8 @@ def _process_message(msg: InboundMessage) -> None:
 
     # 7. Construir y publicar respuesta
     last_dates = read_last_dates(
-        company_code=msg.target_id,
-        company_id=msg.target_id,
+        company_code=company_code,
+        company_id=company_id,
     )
 
     response = OutboundMessage.from_inbound(msg)

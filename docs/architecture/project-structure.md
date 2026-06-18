@@ -11,8 +11,8 @@ dpd/
 ├── lambda_handler.py        # Entry point AWS Lambda: SQS → cálculo → SNS. Orquesta todo el flujo.
 ├── models.py                # Protocolo de mensajes SQS/SNS (InboundMessage, OutboundMessage, MessageMetadata).
 ├── config.py                # DBConfig (credenciales desde .env) + RunConfig (parámetros de cálculo).
-├── excel_runner.py          # Carga/sanitiza Excel + compute_dpd(): NÚCLEO de cómputo compartido. CLI propio.
-├── db_reader.py             # SELECTs a MySQL para la Lambda (read_schedule, read_payments, read_last_dates).
+├── excel_runner.py          # load_schedule/load_payment_tape (leen payments_db + sanitizan) + compute_dpd(): NÚCLEO de cómputo.
+├── db_reader.py             # SELECTs a MySQL (read_last_dates; read_schedule/read_payments legacy).
 ├── spi_builder.py           # Genera SPI (amortización PMT) desde el loan tape y lo persiste en MySQL.
 ├── s3_io.py                 # read/write del loan tape en S3 (csv/parquet) vía boto3.
 ├── sns_publisher.py         # publish_response(): publica el OutboundMessage en SNS con MessageAttributes.
@@ -23,10 +23,16 @@ dpd/
 │   ├── dpd.py               #   dpd_current, dpd_max (high-watermark), amount_in_arrears.
 │   ├── total_amount.py      #   total_amount_paid.
 │   └── vpn.py               #   vpn (valor presente neto de cuotas futuras).
+├── clients/                 # Clients HTTP a servicios externos.
+│   ├── company_client.py    #   Company Provider: get_company_by_id (id→code) / get_borrower_id_by_code.
+│   └── machine_to_machine.py#   Token M2M (Auth0 vía SSM).
+├── utils/                   # Helpers transversales.
+│   ├── aws_boto_session.py  #   Sesión boto3 (perfil local vs rol Lambda).
+│   └── secrets_manager.py   #   get_secret_value(key) desde Secrets Manager.
 └── integrations/            # Acceso a MySQL y runner MySQL→Excel (solo lectura).
     ├── db.py                #   Wrapper fino PyMySQL (connect, cursor). SQL crudo, sin ORM.
     ├── queries.py           #   Summary queries por contrato (current_dpd / max_dpd).
-    └── db_excel_runner.py   #   Entry point: lee MySQL (solo lectura) y exporta DPD a Excel.
+    └── db_excel_runner.py   #   Entry point: lee payments_db (solo lectura) y exporta DPD a Excel.
 ```
 
 ## Raíz del repo

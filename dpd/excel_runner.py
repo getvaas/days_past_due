@@ -1,37 +1,25 @@
-r"""Ejecutor de DPD sobre archivos Excel (sin MySQL).
+"""Carga de datos de cálculo desde payments_db y núcleo de cómputo DPD.
 
-Punto de entrada alternativo al job de BD para cuando los datos
-llegan como archivos planos. Sirve tanto como módulo importable
-como script ejecutable directamente.
-
-Uso como script:
-    python -m dpd.excel_runner \
-        --schedule tests/Days\ Past\ Due.xlsx \
-        --payment-tape tests/Days\ Past\ Due.xlsx \
-        --date 2026-10-03 \
-        --mode cascade \
-        --out resultado_dpd.xlsx
+`load_schedule`/`load_payment_tape` leen las tablas de payments_db (filtradas por
+compañía) y las sanitizan; `compute_dpd` corre el cálculo sobre los DataFrames ya
+sanitizados. La entrada es siempre la base de datos — ya no se leen archivos planos.
 
 Uso como módulo:
-    from dpd.excel_runner import run_from_excel
-    detail, summary = run_from_excel(
-        schedule_path="...",
-        payment_tape_path="...",
-        calc_date=date(2026, 10, 3),
-    )
+    from dpd.excel_runner import load_schedule, load_payment_tape, compute_dpd
+    sched = load_schedule(company_code="sistecredito")
+    pays = load_payment_tape(company_id=86)
+    detail, summary = compute_dpd(sched, pays, calc_date=date(2026, 10, 3))
 """
 from __future__ import annotations
 
-import argparse
 import os
-import sys
-from datetime import date, datetime
-from decimal import Decimal
+from datetime import date
 from typing import Optional
 
 import pandas as pd
 
-from .config import RunConfig
+from .config import DBConfig, RunConfig
+from .integrations.db import connect, cursor
 from .modes import cascade_fifo, join_installment
 
 # ─── Constantes ─────────────────────────────────────────────────────────────
@@ -41,27 +29,32 @@ BUCKET_COLS = [
     "guarantee_amount", "tax_amount", "fee_amount",
 ]
 
-SCHEDULE_SHEET_FALLBACKS = [
-    "scheduled_payments_installments", "schedule", "Schedule", "SPI",
+# Columnas mínimas de payment_tape para construir un DataFrame vacío bien formado
+# cuando la compañía no tiene pagos.
+_PT_MIN_COLS = [
+    "borrower_contract_id", "borrower_installment_reference",
+    "payment_date", "total_payment",
 ]
 
-PT_SHEET_FALLBACKS = [
-    "Payment_Tape", "payment_tape", "PT", "payments",
-]
+# SELECT * por portabilidad: prod trae más columnas que el esquema de prueba y el
+# sanitizador toma solo las necesarias. Solo lectura.
+SCHEDULE_SQL = """
+SELECT *
+FROM scheduled_payments_installments
+WHERE company_code = %(company_code)s
+ORDER BY borrower_contract_id, `date` ASC, id ASC;
+"""
+
+PAYMENT_TAPE_SQL = """
+SELECT *
+FROM payment_tape
+WHERE company_id = %(company_id)s
+  AND payment_date IS NOT NULL
+ORDER BY borrower_contract_id, payment_date ASC, id ASC;
+"""
 
 
-# ─── Carga y sanitización ────────────────────────────────────────────────────
-
-def _load_sheet(path: str, sheet_name: Optional[str], fallbacks: list[str]) -> pd.DataFrame:
-    """Carga una hoja de Excel por nombre exacto, fallback o primera hoja."""
-    xls = pd.ExcelFile(path)
-    if sheet_name and sheet_name in xls.sheet_names:
-        return pd.read_excel(xls, sheet_name=sheet_name)
-    for fb in fallbacks:
-        if fb in xls.sheet_names:
-            return pd.read_excel(xls, sheet_name=fb)
-    return pd.read_excel(xls, sheet_name=xls.sheet_names[0])
-
+# ─── Sanitización ────────────────────────────────────────────────────────────
 
 def _ref_to_str(s: pd.Series) -> pd.Series:
     """Normaliza borrower_installment_reference a string (maneja floats de Excel)."""
@@ -105,49 +98,62 @@ def sanitize_schedule(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_schedule(
-    path: str,
-    sheet_name: Optional[str] = None,
+    company_code: str,
+    db_cfg: Optional[DBConfig] = None,
 ) -> pd.DataFrame:
-    """Carga la hoja de scheduled_payments_installments desde Excel y la sanitiza."""
-    return sanitize_schedule(_load_sheet(path, sheet_name, SCHEDULE_SHEET_FALLBACKS))
+    """Lee scheduled_payments_installments de payments_db (filtrada por company_code) y la sanitiza.
+
+    Devuelve un DataFrame vacío si la compañía no tiene cuotas (el caller decide
+    qué hacer, p.ej. generar el SPI).
+    """
+    cfg = db_cfg or DBConfig.load()
+    conn = connect(cfg)
+    try:
+        with cursor(conn) as cur:
+            cur.execute(SCHEDULE_SQL, {"company_code": str(company_code)})
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return sanitize_schedule(df)
 
 
 def sanitize_payment_tape(df: pd.DataFrame) -> pd.DataFrame:
-    """Sanitiza un DataFrame crudo de Payment_Tape.
+    """Sanitiza un DataFrame crudo de payment_tape (desde payments_db).
 
-    Mismo tratamiento sin importar el origen (Excel o MySQL):
     - Convierte payment_date a datetime.date
     - Normaliza borrower_installment_reference a str
-    - Intenta rescatar la referencia de cuota desde columnas Unnamed (solo Excel)
     """
     df = df.copy()
     df["payment_date"] = pd.to_datetime(df["payment_date"], errors="coerce").dt.date
-
-    if (
-        "borrower_installment_reference" in df.columns
-        and df["borrower_installment_reference"].isna().all()
-    ):
-        fallback_col = next(
-            (c for c in df.columns if c.startswith("Unnamed:") and df[c].notna().any()),
-            None,
-        )
-        if fallback_col:
-            print(
-                f"⚠  payment_tape.borrower_installment_reference vacía — "
-                f"usando columna '{fallback_col}' como referencia de cuota."
-            )
-            df["borrower_installment_reference"] = df[fallback_col]
-
     df["borrower_installment_reference"] = _ref_to_str(df["borrower_installment_reference"])
     return df
 
 
 def load_payment_tape(
-    path: str,
-    sheet_name: Optional[str] = None,
+    company_id: int,
+    db_cfg: Optional[DBConfig] = None,
 ) -> pd.DataFrame:
-    """Carga la hoja de Payment_Tape desde Excel y la sanitiza."""
-    return sanitize_payment_tape(_load_sheet(path, sheet_name, PT_SHEET_FALLBACKS))
+    """Lee payment_tape de payments_db (filtrada por company_id) y la sanitiza.
+
+    Si la compañía no tiene pagos, devuelve un DataFrame vacío con las columnas
+    mínimas (el cálculo lo interpreta como "todo en mora").
+    """
+    cfg = db_cfg or DBConfig.load()
+    conn = connect(cfg)
+    try:
+        with cursor(conn) as cur:
+            cur.execute(PAYMENT_TAPE_SQL, {"company_id": company_id})
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return pd.DataFrame(columns=_PT_MIN_COLS)
+    return sanitize_payment_tape(pd.DataFrame(rows))
 
 
 # ─── Conversión a dicts para los modos ───────────────────────────────────────
@@ -193,47 +199,6 @@ def _payments_from_df(df: pd.DataFrame) -> list[dict]:
 
 # ─── Cómputo principal ────────────────────────────────────────────────────────
 
-def run_from_excel(
-    schedule_path: str,
-    payment_tape_path: str,
-    calc_date: date,
-    mode: str = "cascade",
-    grace_days: int = 1,
-    partial_counts: bool = False,
-    schedule_sheet: Optional[str] = None,
-    payment_tape_sheet: Optional[str] = None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Carga los Excel, corre DPD en ambos modos y devuelve (detail_df, summary_df).
-
-    Args:
-        schedule_path:      Ruta al Excel con scheduled_payments_installments.
-        payment_tape_path:  Ruta al Excel con Payment_Tape (puede ser el mismo archivo).
-        calc_date:          Fecha de corte del cálculo.
-        mode:               "cascade" | "join" | "both" (default: "cascade").
-        grace_days:         Días calendario de gracia tras el vencimiento (default: 1).
-        partial_counts:     En cascade, si un pago parcial cuenta como cuota pagada.
-        schedule_sheet:     Nombre exacto de la hoja en schedule_path (None = autodetect).
-        payment_tape_sheet: Nombre exacto de la hoja en payment_tape_path (None = autodetect).
-
-    Returns:
-        detail_df:  Una fila por cuota con columnas CASCADE_DPD, CASCADE_ARREARS,
-                    JOIN_DPD, JOIN_ARREARS (y MAX_* por contrato).
-        summary_df: Una fila por contrato con DPD máximo y arrears totales.
-    """
-    print(f"Cargando schedule: {schedule_path}")
-    sched_df = load_schedule(schedule_path, schedule_sheet)
-    print(f"  → {len(sched_df)} cuotas | {sched_df['borrower_contract_id'].nunique()} contratos")
-
-    print(f"Cargando payment tape: {payment_tape_path}")
-    pay_df = load_payment_tape(payment_tape_path, payment_tape_sheet)
-    print(f"  → {len(pay_df)} pagos | {pay_df['borrower_contract_id'].nunique()} contratos")
-
-    return compute_dpd(
-        sched_df, pay_df, calc_date,
-        mode=mode, grace_days=grace_days, partial_counts=partial_counts,
-    )
-
-
 def compute_dpd(
     sched_df: pd.DataFrame,
     pay_df: pd.DataFrame,
@@ -244,8 +209,8 @@ def compute_dpd(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Corre DPD sobre DataFrames ya sanitizados y devuelve (detail_df, summary_df).
 
-    Núcleo de cálculo compartido entre el origen Excel (run_from_excel) y el
-    origen MySQL (dpd.integrations.db_excel_runner). No lee archivos ni la BD.
+    Núcleo de cálculo compartido. Opera sobre DataFrames ya sanitizados
+    (ver load_schedule / load_payment_tape). No lee la BD por sí mismo.
     """
     insts = _installments_from_df(sched_df)
     pays = _payments_from_df(pay_df)
@@ -338,63 +303,3 @@ def export_results(
     print(f"Exportado: {os.path.abspath(out_path)}")
     print(f"  - schedule_con_dpd:     {len(detail_df)} filas")
     print(f"  - resumen_por_contrato: {len(summary_df)} filas")
-
-
-# ─── CLI ─────────────────────────────────────────────────────────────────────
-
-def _parse_date(s: str) -> date:
-    return datetime.strptime(s, "%Y-%m-%d").date()
-
-
-def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(
-        description="Calcula DPD desde archivos Excel (sin MySQL)."
-    )
-    p.add_argument("--schedule", required=True, help="Ruta al Excel de scheduled_payments_installments.")
-    p.add_argument("--payment-tape", required=True, help="Ruta al Excel de Payment_Tape.")
-    p.add_argument(
-        "--date", dest="calc_date", type=_parse_date, default=date.today(),
-        help="Fecha de corte (YYYY-MM-DD). Default: hoy.",
-    )
-    p.add_argument(
-        "--mode", choices=("cascade", "join", "both"), default="cascade",
-        help="Modo de cálculo. Default: cascade.",
-    )
-    p.add_argument(
-        "--grace-days", type=int, default=1,
-        help="Días calendario de gracia. Default: 1.",
-    )
-    p.add_argument(
-        "--partial-counts", action="store_true",
-        help="En cascade, pago parcial cuenta como cuota pagada.",
-    )
-    p.add_argument(
-        "--schedule-sheet", default=None,
-        help="Nombre exacto de la hoja de schedule (autodetect si se omite).",
-    )
-    p.add_argument(
-        "--pt-sheet", default=None,
-        help="Nombre exacto de la hoja de payment tape (autodetect si se omite).",
-    )
-    p.add_argument(
-        "--out", default="resultado_dpd.xlsx",
-        help="Ruta del Excel de salida. Default: resultado_dpd.xlsx.",
-    )
-    args = p.parse_args(argv if argv is not None else sys.argv[1:])
-
-    detail, summary = run_from_excel(
-        schedule_path=args.schedule,
-        payment_tape_path=args.payment_tape,
-        calc_date=args.calc_date,
-        mode=args.mode,
-        grace_days=args.grace_days,
-        partial_counts=args.partial_counts,
-        schedule_sheet=args.schedule_sheet,
-        payment_tape_sheet=args.pt_sheet,
-    )
-    export_results(detail, summary, args.out)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
