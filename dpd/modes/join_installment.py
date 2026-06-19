@@ -100,10 +100,13 @@ def compute_from_data(
                   installment_date, gross_amount.
     payments: dicts con borrower_contract_id, borrower_installment_reference, total_payment.
     """
+    installments = list(installments)
     paid_by = aggregate_payments_by_ref(payments)
-    count = 0
+    log.info(
+        "join mode: installments=%d | payment_refs=%d → processing",
+        len(installments), len(paid_by),
+    )
     for inst in installments:
-        count += 1
         key = (inst["borrower_contract_id"], str(inst["borrower_installment_reference"]))
         total_paid = paid_by.get(key, Decimal(0))
         gross = _to_dec(inst.get("gross_amount"))
@@ -118,7 +121,6 @@ def compute_from_data(
             "dpd_current": dpd,
             "amount_in_arrears": arrears,
         }
-    log.info("join mode: %d installments processed", count)
 
 
 def compute(conn, cfg: RunConfig) -> Iterator[dict]:

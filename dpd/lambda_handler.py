@@ -53,7 +53,7 @@ def _validate(msg: InboundMessage) -> None:
 
 def _process_message(msg: InboundMessage) -> None:
     log.info(
-        "job_id=%s | products=%s | company=%s | key=%s | rate_type=%s",
+        "[START] job_id=%s | products=%s | company=%s | key=%s | rate_type=%s",
         msg.job_id, msg.metadata.products, msg.target_id, msg.key, msg.rate_type,
     )
 
@@ -120,7 +120,7 @@ def _process_message(msg: InboundMessage) -> None:
         )
         log.info("SPI generado y persistido: %d cuotas", len(spi_df))
 
-    calc_date = date.today()
+    calc_date = msg.metadata.calc_date or date.today()
 
     # 4. Calcular productos solicitados
     if "dpd" in msg.metadata.products:
@@ -170,26 +170,31 @@ def _process_message(msg: InboundMessage) -> None:
     response.metadata.last_payment_date = last_dates["last_payment_date"]
 
     message_id = publish_response(response)
-    log.info("Respuesta publicada en SNS. MessageId=%s", message_id)
+    log.info(
+        "[END] job_id=%s | output=%s | sns_message_id=%s",
+        msg.job_id, msg.output_file, message_id,
+    )
 
 
 def handler(event: dict, context) -> dict:
     """Entry point de AWS Lambda."""
     records = event.get("Records", [])
-    log.info("Recibidos %d records SQS", len(records))
+    log.info("[START] handler | records=%d", len(records))
 
     errors = []
-    for record in records:
+    for i, record in enumerate(records, start=1):
         try:
             msg = InboundMessage.from_sqs_record(record)
             _validate(msg)
             _process_message(msg)
         except Exception as exc:
-            log.exception("Error procesando record: %s", exc)
+            log.exception("Error en record %d/%d: %s", i, len(records), exc)
             errors.append(str(exc))
 
+    status = "ok" if not errors else f"errors={len(errors)}"
+    log.info("[END] handler | processed=%d | %s", len(records), status)
+
     if errors:
-        # Relanzar para que SQS reintente el batch si hubo errores
         raise RuntimeError(f"Errores en {len(errors)} records: {errors}")
 
     return {"statusCode": 200, "processed": len(records)}

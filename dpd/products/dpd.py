@@ -8,6 +8,7 @@ Columnas que añade:
 """
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Optional
 
@@ -16,6 +17,8 @@ import pandas as pd
 from ..config import RunConfig
 from ..modes import cascade_fifo
 from ..excel_runner import sanitize_schedule, sanitize_payment_tape, _installments_from_df, _payments_from_df
+
+log = logging.getLogger(__name__)
 
 
 def compute(
@@ -50,6 +53,11 @@ def compute(
     if calc_date is None:
         calc_date = date.today()
 
+    log.info(
+        "[START] dpd.compute | contracts=%d | mode=%s | calc_date=%s | threshold=%s",
+        len(loan_tape), mode, calc_date, paid_threshold,
+    )
+
     # Sanitizar inputs si vienen crudos
     spi_clean = sanitize_schedule(spi_df) if "installment_date" not in spi_df.columns else spi_df
     pay_clean = sanitize_payment_tape(payments_df) if "payment_date" not in payments_df.columns else payments_df
@@ -73,11 +81,21 @@ def compute(
     insts = _installments_from_df(spi_aligned)
     pays = _payments_from_df(pay_aligned)
 
+    log.info(
+        "dpd.compute | installments=%d | payments=%d → running %s mode",
+        len(insts), len(pays), mode,
+    )
+
     if mode == "cascade":
         results = list(cascade_fifo.compute_from_data(insts, pays, cfg))
     else:
         from ..modes import join_installment
         results = list(join_installment.compute_from_data(insts, pays, cfg))
+
+    log.info(
+        "dpd.compute | results=%d | in_arrears=%d",
+        len(results), sum(1 for r in results if r.get("dpd_current", 0) > 0),
+    )
 
     if not results:
         loan_tape = loan_tape.copy()

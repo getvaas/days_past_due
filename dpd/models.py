@@ -12,6 +12,7 @@ class MessageMetadata:
     products: list[str]                          # ["dpd", "total_amount", "vpn"]
     interest_rate: Optional[float] = None        # requerido solo para "vpn"
     paid_threshold: float = 1.0                  # fracción mínima pagada para cuota al día (default 100%)
+    calc_date: Optional[date] = None             # fecha de corte; None → date.today() en el handler
     last_payment_tape_date: Optional[date] = None
     last_schedule_payment_date: Optional[date] = None
     last_payment_date: Optional[date] = None
@@ -29,6 +30,7 @@ class MessageMetadata:
             products=d.get("products", []),
             interest_rate=d.get("interest_rate"),
             paid_threshold=float(d.get("paid_threshold", 1.0)),
+            calc_date=_to_date(d.get("calc_date")),
             last_payment_tape_date=_to_date(d.get("last_payment_tape_date")),
             last_schedule_payment_date=_to_date(d.get("last_schedule_payment_date")),
             last_payment_date=_to_date(d.get("last_payment_date")),
@@ -40,6 +42,8 @@ class MessageMetadata:
             out["interest_rate"] = self.interest_rate
         if self.paid_threshold != 1.0:
             out["paid_threshold"] = self.paid_threshold
+        if self.calc_date is not None:
+            out["calc_date"] = self.calc_date.isoformat()
         if self.last_payment_tape_date:
             out["last_payment_tape_date"] = self.last_payment_tape_date.isoformat()
         if self.last_schedule_payment_date:

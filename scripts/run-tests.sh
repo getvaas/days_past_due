@@ -85,7 +85,7 @@ docker run --rm \
     -v "${PIP_CACHE_VOLUME}:/root/.cache/pip" \
     -w /app \
     ${PYTHON_IMAGE} \
-    bash -c "pip install -q -r requirements.txt pytest && python -m pytest"
+    bash -c "pip install -q -r requirements.txt pytest && python -m pytest -v"
 
 TEST_EXIT_CODE=$?
 set -e  # Re-enable exit on error
