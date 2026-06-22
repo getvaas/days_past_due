@@ -1,7 +1,4 @@
 # Camino de entrada: [Enricher] -> SNS topic (FIFO) -> SQS queue (FIFO) -> Lambda DPD
-#
-# Alcance de esta entrega: cola SQS + trigger. La Lambda, su rol IAM, VPC y el
-# topic SNS de respuesta quedan fuera (ver plan / README de infra).
 
 # 0. Log group de CloudWatch para la Lambda (retención por entorno).
 module "cloudwatch" {
@@ -52,11 +49,64 @@ module "sns_subscription" {
   queue_url     = module.sqs.queue_url
 }
 
-# 4. Trigger SQS -> Lambda. Solo si ya existe la Lambda (var.lambda_function_name).
+# 5. Bucket S3 para loan tapes (input y output de la Lambda).
+#    La Lambda lee el loan tape desde input_file y escribe el resultado en output_file,
+#    ambos paths apuntan a este bucket.
+module "s3_loan_tape" {
+  source      = "git@github.com:getvaas/tf_modules.git//s3"
+  bucket_name = "days-past-due-loan-tape"
+  environment = var.environment
+}
+
+# 6. Rol IAM + política para la Lambda.
+module "iam_lambda_dpd" {
+  source = "git@github.com:getvaas/tf_modules.git//iam_lambda"
+  iam_configuration = {
+    role_lambda_name   = "${var.environment}-days-past-due-lambda-role"
+    policy_lambda_name = "${var.environment}-days-past-due-lambda-policy"
+    policy_lambda_actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:ListBucket",
+      "secretsmanager:GetSecretValue",
+      "sns:Publish",
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes",
+      "batch:SubmitJob",
+    ]
+  }
+}
+
+# 7. Función Lambda DPD.
+module "lambda_dpd" {
+  source              = "git@github.com:getvaas/tf_modules.git//lambda"
+  name                = local.lambda_name
+  handler             = "dpd.lambda_handler.handler"
+  runtime             = "python3.11"
+  memory_size         = var.lambda_memory_size
+  timeout             = var.visibility_timeout
+  iam_role_lambda_arn = module.iam_lambda_dpd.iam_role_lambda_arn
+  s3_code_bucket      = var.lambda_code_bucket
+  s3_code_key         = var.lambda_code_key
+  environment_variables = {
+    "ENVIRONMENT"            = var.environment
+    "AWS_REGION"             = var.aws_region
+    "PAYMENTS_SECRET_NAME"   = var.payments_secret_name
+    "SNS_RESPONSE_TOPIC_ARN" = var.sns_response_topic_arn
+    "BATCH_ROW_THRESHOLD"    = tostring(var.batch_row_threshold)
+    "BATCH_JOB_QUEUE"        = var.batch_job_queue
+    "BATCH_JOB_DEFINITION"   = var.batch_job_definition
+  }
+}
+
+# 4. Trigger SQS -> Lambda.
 module "sqs_invoke" {
-  count  = var.lambda_function_name != "" ? 1 : 0
   source = "./modules/sqs_event_invoke_lambda"
 
-  lambda_function_name = var.lambda_function_name
+  lambda_function_name = module.lambda_dpd.lambda_function_name
   sqs_queue_arn        = module.sqs.queue_arn
 }

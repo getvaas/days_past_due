@@ -86,8 +86,47 @@ variable "inbound_sns_topic_arn" {
   description = "ARN del topic de entrada si lo posee el Enricher. Vacío = se crea uno acá."
 }
 
-variable "lambda_function_name" {
+# ─── Lambda ──────────────────────────────────────────────────────────────────────
+
+variable "lambda_code_bucket" {
+  type        = string
+  description = "Bucket S3 donde el pipeline CI/CD sube el ZIP de la Lambda."
+}
+
+variable "lambda_code_key" {
+  type        = string
+  default     = "days-past-due/latest.zip"
+  description = "Ruta del ZIP dentro de lambda_code_bucket."
+}
+
+variable "lambda_memory_size" {
+  type        = number
+  default     = 512
+  description = "Memoria asignada a la Lambda en MB."
+}
+
+variable "sns_response_topic_arn" {
   type        = string
   default     = ""
-  description = "Nombre de la Lambda a disparar. Vacío = no se crea el trigger (la Lambda aún no existe)."
+  description = "ARN del topic SNS donde la Lambda publica la respuesta enriquecida."
+}
+
+# ─── Batch ───────────────────────────────────────────────────────────────────────
+
+variable "batch_row_threshold" {
+  type        = number
+  default     = 5000
+  description = "Filas del loan tape a partir de las cuales se delega a AWS Batch."
+}
+
+variable "batch_job_queue" {
+  type        = string
+  default     = ""
+  description = "ARN o nombre de la job queue de AWS Batch."
+}
+
+variable "batch_job_definition" {
+  type        = string
+  default     = ""
+  description = "ARN o nombre de la job definition de AWS Batch."
 }
