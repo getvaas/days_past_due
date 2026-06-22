@@ -26,7 +26,7 @@ from ..config import RunConfig
 
 log = logging.getLogger(__name__)
 
-INSTALLMENTS_SQL = """
+SCHEDULE_SQL = """
 SELECT
     id,
     borrower_contract_id,
@@ -38,11 +38,11 @@ SELECT
     tax_amount,
     fee_amount
 FROM scheduled_payments_installments
-WHERE company_code = %(company_code)s
+WHERE company_id = %(company_id)s
 ORDER BY borrower_contract_id, `date` ASC, id ASC;
 """
 
-PAYMENTS_SQL = """
+PAYMENT_TAPE_SQL = """
 SELECT
     borrower_contract_id,
     payment_date,
@@ -178,14 +178,14 @@ def compute(conn, cfg: RunConfig) -> Iterator[dict]:
     """Yield {id, dpd_current, amount_in_arrears} por cuota — desde la BD."""
     from ..integrations.db import cursor
     with cursor(conn) as cur:
-        cur.execute(INSTALLMENTS_SQL, {"company_code": cfg.company_code})
+        cur.execute(SCHEDULE_SQL, {"company_id": cfg.company_id})
         installments = cur.fetchall()
-        cur.execute(PAYMENTS_SQL, {"company_id": cfg.company_id})
+        cur.execute(PAYMENT_TAPE_SQL, {"company_id": cfg.company_id})
         payments = cur.fetchall()
 
     log.info(
-        "cascade mode: fetched %d installments / %d payments for company_code=%s / company_id=%s",
-        len(installments), len(payments), cfg.company_code, cfg.company_id,
+        "cascade mode: fetched %d installments / %d payments for company_id=%s",
+        len(installments), len(payments), cfg.company_id,
     )
 
     yield from compute_from_data(installments, payments, cfg)

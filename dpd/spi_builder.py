@@ -205,7 +205,7 @@ def build_schedule(
 
 _INSERT_SQL = """
 INSERT INTO scheduled_payments_installments
-    (company_code,
+    (company_id,
      borrower_contract_id,
      borrower_installment_reference,
      `date`,
@@ -216,7 +216,7 @@ INSERT INTO scheduled_payments_installments
      tax_amount,
      fee_amount)
 VALUES
-    (%(company_code)s,
+    (%(company_id)s,
      %(borrower_contract_id)s,
      %(borrower_installment_reference)s,
      %(date)s,
@@ -227,11 +227,11 @@ VALUES
 """
 
 
-def _insert_batch(conn, company_code: str, installments: list[Installment]) -> int:
+def _insert_batch(conn, company_id: int, installments: list[Installment]) -> int:
     """Inserta todas las cuotas en un solo executemany dentro de la conexión abierta."""
     rows = [
         {
-            "company_code": company_code,
+            "company_id": company_id,
             "borrower_contract_id": inst.borrower_contract_id,
             "borrower_installment_reference": str(inst.installment_number),
             "date": inst.installment_date,
@@ -275,22 +275,22 @@ DEFAULT_COLUMNS = LoanTapeColumns()
 
 def build_and_persist(
     loan_tape: pd.DataFrame,
-    company_code: str,
+    company_id: int,
     db_cfg: Optional[DBConfig] = None,
     columns: LoanTapeColumns = DEFAULT_COLUMNS,
 ) -> pd.DataFrame:
     """Construye el SPI desde el loan tape y lo persiste en MySQL.
 
     Args:
-        loan_tape:    DataFrame con una fila por contrato. Debe tener las
-                      columnas definidas en `columns`.
-        company_code: Código de la compañía (filtra scheduled_payments_installments).
-        db_cfg:       Config de BD. Si None, lee de variables de entorno.
+        loan_tape:  DataFrame con una fila por contrato. Debe tener las
+                    columnas definidas en `columns`.
+        company_id: ID numérico de la compañía.
+        db_cfg:     Config de BD. Si None, lee de variables de entorno.
         columns:      Mapeo de nombres de columnas del loan tape.
 
     Returns:
-        DataFrame con todos los installments generados, en el mismo formato
-        que devuelve `db_reader.read_schedule` (columna installment_date).
+        DataFrame con todos los installments generados, en formato sanitizado
+        (columna installment_date).
 
     Raises:
         ValueError: Si el loan tape no tiene las columnas requeridas.
@@ -360,18 +360,18 @@ def build_and_persist(
 
     if not all_installments:
         raise RuntimeError(
-            f"No se pudo generar ningún installment para company_code={company_code}. "
+            f"No se pudo generar ningún installment para company_id={company_id}. "
             f"Errores: {errors}"
         )
 
     cfg = db_cfg or DBConfig.load()
     conn = connect(cfg)
     try:
-        total = _insert_batch(conn, company_code, all_installments)
+        total = _insert_batch(conn, company_id, all_installments)
         conn.commit()
         log.info(
-            "SPI persistido: %d cuotas para company_code=%s (%d contratos, %d con error)",
-            total, company_code, len(loan_tape), len(errors),
+            "SPI persistido: %d cuotas para company_id=%s (%d contratos, %d con error)",
+            total, company_id, len(loan_tape), len(errors),
         )
     except Exception:
         conn.rollback()
@@ -379,11 +379,11 @@ def build_and_persist(
     finally:
         conn.close()
 
-    # Devolver como DataFrame en el mismo formato que db_reader.read_schedule
+    # Devolver como DataFrame con installment_date para continuar el run sin releer la BD
     return pd.DataFrame([
         {
             "id": None,  # asignado por MySQL (auto-increment)
-            "company_code": company_code,
+            "company_id": company_id,
             "borrower_contract_id": inst.borrower_contract_id,
             "borrower_installment_reference": str(inst.installment_number),
             "installment_date": inst.installment_date,

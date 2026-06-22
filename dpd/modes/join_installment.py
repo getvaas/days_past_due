@@ -22,10 +22,7 @@ log = logging.getLogger(__name__)
 # LEFT JOIN para no perder cuotas sin pago. La subquery agrega payment_tape
 # por (borrower_contract_id, borrower_installment_reference).
 #
-# Nota: cada lado se filtra por su propia columna de company (payment_tape.company_id
-# numérico vs scheduled_payments_installments.company_code string), así que NO se
-# joinean por company — sí por contrato + referencia de cuota.
-SELECT_SQL = """
+SCHEDULE_WITH_PAYMENTS_SQL = """
 SELECT
     spi.id                                  AS id,
     spi.borrower_contract_id                AS borrower_contract_id,
@@ -45,7 +42,7 @@ LEFT JOIN (
 ) p
   ON p.borrower_contract_id = spi.borrower_contract_id
  AND p.borrower_installment_reference = spi.borrower_installment_reference
-WHERE spi.company_code = %(company_code)s;
+WHERE spi.company_id = %(company_id)s;
 """
 
 
@@ -103,10 +100,13 @@ def compute_from_data(
                   installment_date, gross_amount.
     payments: dicts con borrower_contract_id, borrower_installment_reference, total_payment.
     """
+    installments = list(installments)
     paid_by = aggregate_payments_by_ref(payments)
-    count = 0
+    log.info(
+        "join mode: installments=%d | payment_refs=%d → processing",
+        len(installments), len(paid_by),
+    )
     for inst in installments:
-        count += 1
         key = (inst["borrower_contract_id"], str(inst["borrower_installment_reference"]))
         total_paid = paid_by.get(key, Decimal(0))
         gross = _to_dec(inst.get("gross_amount"))
@@ -121,7 +121,6 @@ def compute_from_data(
             "dpd_current": dpd,
             "amount_in_arrears": arrears,
         }
-    log.info("join mode: %d installments processed", count)
 
 
 def compute(conn, cfg: RunConfig) -> Iterator[dict]:
@@ -129,14 +128,14 @@ def compute(conn, cfg: RunConfig) -> Iterator[dict]:
     from ..integrations.db import cursor
     with cursor(conn) as cur:
         cur.execute(
-            SELECT_SQL,
-            {"company_id": cfg.company_id, "company_code": cfg.company_code},
+            SCHEDULE_WITH_PAYMENTS_SQL,
+            {"company_id": cfg.company_id},
         )
         rows = cur.fetchall()
 
     log.info(
-        "join mode: %d installments fetched for company_code=%s / company_id=%s",
-        len(rows), cfg.company_code, cfg.company_id,
+        "join mode: %d installments fetched for company_id=%s",
+        len(rows), cfg.company_id,
     )
 
     # Ya viene pre-agregado por el SQL; emulamos la forma esperada por _dpd_for_row directamente.

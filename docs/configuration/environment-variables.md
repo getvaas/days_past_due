@@ -4,7 +4,7 @@ Toda la configuración sensible se pasa por variables de entorno.
 
 ## Fuente de la config de BD según el entorno
 
-`DBConfig.load()` ([config.py](../../dpd/config.py)) elige de dónde leer las credenciales:
+`DBConfig.load()` ([config.py](../../dpd/config/config.py)) elige de dónde leer las credenciales:
 
 - **Local** (sin `AWS_LAMBDA_FUNCTION_NAME`): `DBConfig.from_env()` → variables `DB_*`, auto-cargadas desde
   `.env` en la raíz del repo (ver `_load_dotenv`).
