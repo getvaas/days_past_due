@@ -2,9 +2,11 @@ locals {
   # ej. dev_days_past_due  → la cola queda dev_days_past_due_fifo_queue.fifo
   name = "${var.environment}_${var.project_name_snake_case}"
 
-  # Nombre de la futura Lambda (convención ${env}-${kebab}-lambda). El log group
-  # debe coincidir exactamente con /aws/lambda/<ese nombre> para que la Lambda lo use.
+  # Nombre de la Lambda (convención ${env}-${kebab}-lambda).
   lambda_name = "${var.environment}-${replace(var.project_name_snake_case, "_", "-")}-lambda"
+
+  # Nombre base del Batch job (convención ${env}-${kebab}-batch).
+  batch_name = "${var.environment}-${replace(var.project_name_snake_case, "_", "-")}-batch"
 
   cloudwatch_configuration = {
     log_group_name    = "/aws/lambda/${local.lambda_name}"

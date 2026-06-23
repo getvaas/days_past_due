@@ -54,7 +54,7 @@ module "sns_subscription" {
 #    ambos paths apuntan a este bucket.
 module "s3_loan_tape" {
   source      = "git@github.com:getvaas/tf_modules.git//s3"
-  bucket_name = "days-past-due-loan-tape"
+  bucket_name = "${var.environment}-days-past-due-loan-tape"
   environment = var.environment
 }
 
@@ -81,25 +81,87 @@ module "iam_lambda_dpd" {
   }
 }
 
-# 7. Función Lambda DPD.
+# 7. Función Lambda DPD — imagen Docker desde ECR compartido.
 module "lambda_dpd" {
-  source              = "git@github.com:getvaas/tf_modules.git//lambda"
-  name                = local.lambda_name
-  handler             = "dpd.lambda_handler.handler"
-  runtime             = "python3.11"
-  memory_size         = var.lambda_memory_size
-  timeout             = var.visibility_timeout
-  iam_role_lambda_arn = module.iam_lambda_dpd.iam_role_lambda_arn
-  s3_code_bucket      = var.lambda_code_bucket
-  s3_code_key         = var.lambda_code_key
+  source               = "git@github.com:getvaas/tf_modules.git//lambda_docker"
+  name                 = local.lambda_name
+  memory_size          = var.lambda_memory_size
+  timeout              = var.visibility_timeout
+  iam_role_lambda_arn  = module.iam_lambda_dpd.iam_role_lambda_arn
+  ecr_repository_uri   = module.ecr_dpd.ecr_repository_uri
+  image_tag            = var.lambda_image_tag
   environment_variables = {
     "ENVIRONMENT"            = var.environment
     "AWS_REGION"             = var.aws_region
     "PAYMENTS_SECRET_NAME"   = var.payments_secret_name
     "SNS_RESPONSE_TOPIC_ARN" = var.sns_response_topic_arn
     "BATCH_ROW_THRESHOLD"    = tostring(var.batch_row_threshold)
-    "BATCH_JOB_QUEUE"        = var.batch_job_queue
-    "BATCH_JOB_DEFINITION"   = var.batch_job_definition
+    "BATCH_JOB_QUEUE"        = module.batch_dpd.job_queue_arn
+    "BATCH_JOB_DEFINITION"   = module.batch_dpd.job_definition_arn
+  }
+}
+
+# 8. ECR compartido — Lambda y Batch usan la misma imagen Docker.
+module "ecr_dpd" {
+  source = "git@github.com:getvaas/tf_modules.git//ecr"
+  name   = "${var.environment}-days-past-due-repository"
+}
+
+# 9. CloudWatch log group para el Batch job.
+module "cloudwatch_batch" {
+  source = "git@github.com:getvaas/tf_modules.git//cloudwatch"
+
+  cloudwatch_configuration = {
+    log_group_name    = "/aws/batch/${local.batch_name}"
+    retention_in_days = var.log_retention_in_days != null ? var.log_retention_in_days : (var.environment == "dev" ? 1 : 7)
+  }
+}
+
+# 10. IAM roles para el Batch job (job role + execution role).
+module "iam_batch_dpd" {
+  source = "./modules/iam_batch"
+
+  job_role_name       = "${local.batch_name}-job-role"
+  job_policy_name     = "${local.batch_name}-job-policy"
+  execution_role_name = "${local.batch_name}-execution-role"
+
+  job_policy_actions = [
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    "s3:GetObject",
+    "s3:PutObject",
+    "s3:ListBucket",
+    "secretsmanager:GetSecretValue",
+    "sns:Publish",
+    "sqs:ReceiveMessage",
+    "sqs:DeleteMessage",
+    "sqs:GetQueueAttributes",
+  ]
+}
+
+# 11. Compute Environment + Job Queue + Job Definition.
+module "batch_dpd" {
+  source = "./modules/batch"
+
+  environment          = var.environment
+  name                 = local.batch_name
+  ecr_image_uri        = "${module.ecr_dpd.ecr_repository_uri}:${var.lambda_image_tag}"
+  job_role_arn         = module.iam_batch_dpd.job_role_arn
+  execution_role_arn   = module.iam_batch_dpd.execution_role_arn
+  cloudwatch_log_group = module.cloudwatch_batch.cloudwatch_log_group_name
+  aws_region           = var.aws_region
+  max_vcpus            = var.batch_max_vcpus
+  job_vcpus            = var.batch_job_vcpus
+  job_memory           = var.batch_job_memory_mb
+  subnet_ids           = var.batch_subnet_ids
+  security_group_ids   = var.batch_security_group_ids
+
+  environment_variables = {
+    "ENVIRONMENT"            = var.environment
+    "AWS_REGION"             = var.aws_region
+    "PAYMENTS_SECRET_NAME"   = var.payments_secret_name
+    "SNS_RESPONSE_TOPIC_ARN" = var.sns_response_topic_arn
+    "BATCH_ROW_THRESHOLD"    = tostring(var.batch_row_threshold)
   }
 }
 
@@ -107,6 +169,8 @@ module "lambda_dpd" {
 module "sqs_invoke" {
   source = "./modules/sqs_event_invoke_lambda"
 
-  lambda_function_name = module.lambda_dpd.lambda_function_name
-  sqs_queue_arn        = module.sqs.queue_arn
+  lambda_function_name               = module.lambda_dpd.lambda_function_name
+  sqs_queue_arn                      = module.sqs.queue_arn
+  batch_size                         = var.sqs_batch_size
+  maximum_batching_window_in_seconds = var.sqs_batching_window_seconds
 }

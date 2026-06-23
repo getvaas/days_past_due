@@ -57,3 +57,18 @@ output "iam_role_lambda_arn" {
   value       = module.iam_lambda_dpd.iam_role_lambda_arn
   description = "ARN del rol IAM asignado a la Lambda."
 }
+
+output "batch_job_queue_arn" {
+  value       = module.batch_dpd.job_queue_arn
+  description = "ARN de la job queue de AWS Batch."
+}
+
+output "batch_job_definition_arn" {
+  value       = module.batch_dpd.job_definition_arn
+  description = "ARN de la job definition de AWS Batch."
+}
+
+output "ecr_repository_uri" {
+  value       = module.ecr_dpd.ecr_repository_uri
+  description = "URI del repositorio ECR compartido por Lambda y Batch."
+}

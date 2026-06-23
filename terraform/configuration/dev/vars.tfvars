@@ -12,9 +12,7 @@ inbound_sns_topic_arn = ""
 payments_secret_name = "dev/payments/datasource"
 
 # ─── Lambda ──────────────────────────────────────────────────────────────────────
-# Bucket y clave donde el pipeline CI/CD sube el ZIP de la Lambda.
-lambda_code_bucket = "TODO_lambda_code_bucket"
-lambda_code_key    = "days-past-due/latest.zip"
+lambda_image_tag   = "latest"
 lambda_memory_size = 512
 
 # ARN del topic SNS donde la Lambda publica la respuesta enriquecida.
@@ -22,6 +20,13 @@ lambda_memory_size = 512
 sns_response_topic_arn = ""
 
 # ─── Batch ───────────────────────────────────────────────────────────────────────
-batch_row_threshold  = 5000
-batch_job_queue      = ""
-batch_job_definition = ""
+batch_row_threshold      = 5000
+batch_max_vcpus          = 16
+batch_job_vcpus          = "1"
+batch_job_memory_mb      = 2048
+batch_subnet_ids         = [
+  "subnet-023b07c277cb886cb",
+  "subnet-08ccd313039482327",
+  "subnet-06f814e9677a7a796",
+]
+batch_security_group_ids = ["sg-0031cc45b05258c36"]

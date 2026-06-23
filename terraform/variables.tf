@@ -86,17 +86,26 @@ variable "inbound_sns_topic_arn" {
   description = "ARN del topic de entrada si lo posee el Enricher. Vacío = se crea uno acá."
 }
 
-# ─── Lambda ──────────────────────────────────────────────────────────────────────
+# ─── SQS → Lambda trigger ───────────────────────────────────────────────────────
 
-variable "lambda_code_bucket" {
-  type        = string
-  description = "Bucket S3 donde el pipeline CI/CD sube el ZIP de la Lambda."
+variable "sqs_batch_size" {
+  type        = number
+  default     = 1
+  description = "Mensajes por invocación de Lambda (1–10). Con FIFO queues el máximo es 10."
 }
 
-variable "lambda_code_key" {
+variable "sqs_batching_window_seconds" {
+  type        = number
+  default     = 0
+  description = "Segundos que SQS espera para acumular un batch antes de invocar (0–300). 0 = disparo inmediato."
+}
+
+# ─── Lambda ──────────────────────────────────────────────────────────────────────
+
+variable "lambda_image_tag" {
   type        = string
-  default     = "days-past-due/latest.zip"
-  description = "Ruta del ZIP dentro de lambda_code_bucket."
+  default     = "latest"
+  description = "Tag de la imagen Docker en ECR usada por Lambda y Batch."
 }
 
 variable "lambda_memory_size" {
@@ -119,14 +128,30 @@ variable "batch_row_threshold" {
   description = "Filas del loan tape a partir de las cuales se delega a AWS Batch."
 }
 
-variable "batch_job_queue" {
-  type        = string
-  default     = ""
-  description = "ARN o nombre de la job queue de AWS Batch."
+variable "batch_max_vcpus" {
+  type        = number
+  default     = 16
+  description = "Máximo de vCPUs del compute environment de Batch."
 }
 
-variable "batch_job_definition" {
+variable "batch_job_vcpus" {
   type        = string
-  default     = ""
-  description = "ARN o nombre de la job definition de AWS Batch."
+  default     = "1"
+  description = "vCPUs asignadas a cada job de Batch (formato string)."
+}
+
+variable "batch_job_memory_mb" {
+  type        = number
+  default     = 2048
+  description = "Memoria en MB asignada a cada job de Batch."
+}
+
+variable "batch_subnet_ids" {
+  type        = list(string)
+  description = "Subnets privadas donde corre el compute environment de Batch."
+}
+
+variable "batch_security_group_ids" {
+  type        = list(string)
+  description = "Security groups del compute environment de Batch."
 }
