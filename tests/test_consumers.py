@@ -7,6 +7,7 @@ import datetime as dt
 from unittest.mock import patch
 
 import pandas as pd
+import polars as pl
 
 from dpd.models import InboundMessage, MessageMetadata
 
@@ -22,13 +23,12 @@ def _inbound(target_id=143, products=None):
 def test_process_message_loads_from_db_with_company_id():
     from dpd import lambda_handler
 
-    loan_tape = pd.DataFrame({"contract_id": ["C1"]})
+    loan_tape = pl.DataFrame({"contract_id": ["C1"]})
     spi = pd.DataFrame({"borrower_contract_id": ["C1"], "id": [1]})
     pays = pd.DataFrame(columns=["borrower_contract_id", "payment_date", "total_payment"])
     last = {"last_payment_tape_date": None, "last_schedule_payment_date": None, "last_payment_date": None}
 
     with patch.object(lambda_handler, "read_loan_tape", return_value=loan_tape), \
-         patch.object(lambda_handler, "try_read_loan_tape", return_value=None), \
          patch.object(lambda_handler, "load_schedule", return_value=spi) as m_sched, \
          patch.object(lambda_handler, "load_payment_tape", return_value=pays) as m_pay, \
          patch.object(lambda_handler, "write_loan_tape") as m_write, \
@@ -60,13 +60,12 @@ def test_lambda_under_threshold_processes_inline():
     from dpd import lambda_handler, config
 
     rows = [{"contract_id": f"C{i}"} for i in range(3)]
-    loan_tape = pd.DataFrame(rows)
+    loan_tape = pl.DataFrame(rows)
     spi = pd.DataFrame({"borrower_contract_id": ["C0"], "id": [1]})
     pays = pd.DataFrame(columns=["borrower_contract_id", "payment_date", "total_payment"])
     last = {"last_payment_tape_date": None, "last_schedule_payment_date": None, "last_payment_date": None}
 
     with patch.object(lambda_handler, "read_loan_tape", return_value=loan_tape), \
-         patch.object(lambda_handler, "try_read_loan_tape", return_value=None), \
          patch.object(lambda_handler, "load_schedule", return_value=spi), \
          patch.object(lambda_handler, "load_payment_tape", return_value=pays), \
          patch.object(lambda_handler, "write_loan_tape"), \
@@ -84,7 +83,7 @@ def test_lambda_over_threshold_submits_batch():
     from dpd import lambda_handler, config
 
     rows = [{"contract_id": f"C{i}"} for i in range(10)]
-    loan_tape = pd.DataFrame(rows)
+    loan_tape = pl.DataFrame(rows)
 
     with patch.object(lambda_handler, "read_loan_tape", return_value=loan_tape), \
          patch.object(lambda_handler, "submit_job") as m_batch, \

@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-import pandas as pd
+import polars as pl
 import pytest
 
 from dpd.products import dpd as dpd_product
@@ -87,19 +87,20 @@ def _run(
     cid: str,
     mode: str,
     paid_threshold: float = 1.0,
-    previous_output: pd.DataFrame | None = None,
-) -> pd.Series:
+) -> dict:
     """Ejecuta dpd_product.compute() y devuelve la fila del contrato."""
-    spi_df = pd.DataFrame(installments)
+    spi_df = pl.DataFrame(installments)
     pay_df = (
-        pd.DataFrame(payments)
+        pl.DataFrame(payments)
         if payments
-        else pd.DataFrame(columns=[
-            "borrower_contract_id", "payment_date",
-            "total_payment", "borrower_installment_reference",
-        ])
+        else pl.DataFrame(schema={
+            "borrower_contract_id": pl.Utf8,
+            "payment_date": pl.Date,
+            "total_payment": pl.Float64,
+            "borrower_installment_reference": pl.Utf8,
+        })
     )
-    loan_tape = pd.DataFrame([{KEY: cid}])
+    loan_tape = pl.DataFrame([{KEY: cid}])
     result = dpd_product.compute(
         loan_tape=loan_tape,
         spi_df=spi_df,
@@ -108,9 +109,8 @@ def _run(
         calc_date=CALC_DATE,
         mode=mode,
         paid_threshold=paid_threshold,
-        previous_output=previous_output,
     )
-    return result.iloc[0]
+    return result.row(0, named=True)
 
 
 # ─── Caso 1 — Happy path ─────────────────────────────────────────────────────
@@ -208,30 +208,6 @@ def test_caso4_pago_atrasado_ya_regularizado(mode):
     assert row["dpd_current"] == 0
     assert row["amount_in_arrears"] == Decimal("0")
 
-
-@pytest.mark.parametrize("mode", ["cascade", "join"])
-def test_caso4_dpd_max_historico_preservado(mode):
-    """Con output previo que registró mora durante agosto, dpd_max no decrece."""
-    cid = "C04"
-    installments = [
-        inst(cid, 1, JUN, "REF-1"),
-        inst(cid, 2, JUL, "REF-2"),
-        inst(cid, 3, AUG, "REF-3"),
-        inst(cid, 4, SEP, "REF-4"),
-        inst(cid, 5, OCT, "REF-5"),
-    ]
-    payments = [
-        pay(cid, JUN,                AMOUNT, "REF-1"),
-        pay(cid, JUL,                AMOUNT, "REF-2"),
-        pay(cid, date(2026, 8, 16),  AMOUNT, "REF-3"),
-        pay(cid, SEP,                AMOUNT, "REF-4"),
-        pay(cid, OCT,                AMOUNT, "REF-5"),
-    ]
-    previous_output = pd.DataFrame([{KEY: cid, "dpd_max": 15}])
-    row = _run(installments, payments, cid, mode, previous_output=previous_output)
-
-    assert row["dpd_current"] == 0
-    assert row["dpd_max"] == 15  # high-watermark del run anterior
 
 
 # ─── Caso 5 — Pago parcial en cuota intermedia ───────────────────────────────
