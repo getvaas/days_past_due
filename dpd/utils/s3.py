@@ -9,7 +9,8 @@ import io
 import logging
 from typing import Optional
 
-import pandas as pd
+import polars as pl
+from botocore.exceptions import ClientError
 
 from . import aws_boto_session
 
@@ -25,8 +26,8 @@ def _parse_s3_path(s3_path: str) -> tuple[str, str]:
     return bucket, key
 
 
-def read_loan_tape(s3_path: str, config=None) -> pd.DataFrame:
-    """Lee el loan tape desde S3. Soporta .csv y .parquet."""
+def read_loan_tape(s3_path: str, config=None) -> pl.DataFrame:
+    """Lee el loan tape desde S3. Soporta .csv y .parquet. Devuelve polars DataFrame."""
     bucket, key = _parse_s3_path(s3_path)
     s3 = aws_boto_session.get_s3_client(config) if config else __import__("boto3").client("s3")
     obj = s3.get_object(Bucket=bucket, Key=key)
@@ -34,40 +35,40 @@ def read_loan_tape(s3_path: str, config=None) -> pd.DataFrame:
     log.info("Leído s3://%s/%s (%d bytes)", bucket, key, len(content))
 
     if key.endswith(".parquet"):
-        return pd.read_parquet(io.BytesIO(content))
-    return pd.read_csv(io.BytesIO(content))
+        return pl.read_parquet(io.BytesIO(content))
+    return pl.read_csv(io.BytesIO(content))
 
 
-def try_read_loan_tape(s3_path: str, config=None) -> Optional[pd.DataFrame]:
+def try_read_loan_tape(s3_path: str, config=None) -> Optional[pl.DataFrame]:
     """Lee el loan tape desde S3. Devuelve None si el objeto no existe (NoSuchKey).
 
     Usado para leer el output anterior y recuperar dpd_max del run previo.
     """
     try:
         return read_loan_tape(s3_path, config=config)
-    except Exception as exc:
-        response = getattr(exc, "response", None)
-        if isinstance(response, dict) and response.get("Error", {}).get("Code") == "NoSuchKey":
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "NoSuchKey":
+            log.info("Sin output previo en S3: %s", s3_path)
             return None
         raise
 
 
-def write_loan_tape(df: pd.DataFrame, s3_path: str, config=None) -> None:
+def write_loan_tape(df: pl.DataFrame, s3_path: str, config=None) -> None:
     """Escribe el loan tape enriquecido en S3. Soporta .csv y .parquet."""
     bucket, key = _parse_s3_path(s3_path)
     s3 = aws_boto_session.get_s3_client(config) if config else __import__("boto3").client("s3")
 
     buffer = io.BytesIO()
     if key.endswith(".parquet"):
-        df.to_parquet(buffer, index=False)
+        df.write_parquet(buffer)
         content_type = "application/octet-stream"
     else:
-        df.to_csv(buffer, index=False)
+        df.write_csv(buffer)
         content_type = "text/csv"
 
     buffer.seek(0)
     s3.put_object(Bucket=bucket, Key=key, Body=buffer.getvalue(), ContentType=content_type)
-    log.info("Escrito s3://%s/%s", bucket, key)
+    log.info("Escrito s3://%s/%s (%d filas)", bucket, key, len(df))
 
 
 def upload_string(bucket: str, key: str, string: str, config=None) -> None:

@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 
+import polars as pl
+
 from . import config
 from .batch_submitter import submit_job
 from .db_reader import read_last_dates
@@ -29,7 +31,7 @@ from .models import InboundMessage, OutboundMessage
 from .products import dpd as product_dpd
 from .products import total_amount as product_total_amount
 from .products import vpn as product_vpn
-from .utils.s3 import read_loan_tape, try_read_loan_tape, write_loan_tape
+from .utils.s3 import read_loan_tape, write_loan_tape
 from .sns_publisher import publish_response
 from .spi_builder import LoanTapeColumns, build_and_persist
 
@@ -57,7 +59,7 @@ def _process_message(msg: InboundMessage) -> None:
         msg.job_id, msg.metadata.products, msg.target_id, msg.key, msg.rate_type,
     )
 
-    # 1. Leer loan tape desde S3
+    # 1. Leer loan tape desde S3 (devuelve polars DataFrame)
     loan_tape = read_loan_tape(msg.input_file)
     log.info("Loan tape cargado: %d filas", len(loan_tape))
 
@@ -82,15 +84,15 @@ def _process_message(msg: InboundMessage) -> None:
         submit_job(payload, config.BATCH_JOB_QUEUE, config.BATCH_JOB_DEFINITION)
         return
 
-    # 2. Leer datos de payments_db usando company_id directo desde el evento.
+    # 2. Leer datos de payments_db. Los loaders devuelven pandas → convertir a polars.
     company_id = msg.target_id
 
-    spi_df = load_schedule(company_id)
-    payments_df = load_payment_tape(company_id)
+    spi_df = pl.from_pandas(load_schedule(company_id))
+    payments_df = pl.from_pandas(load_payment_tape(company_id))
     log.info("DB: %d cuotas | %d pagos", len(spi_df), len(payments_df))
 
     ##TODO A chequear cuando hagamos VPN
-    if spi_df.empty:
+    if spi_df.is_empty():
         if msg.rate_type == "variable":
             # Tasa variable: no se puede generar el SPI automáticamente.
             # Debe existir en BD y cargarse manualmente.
@@ -107,48 +109,60 @@ def _process_message(msg: InboundMessage) -> None:
             "SPI vacío para company=%s — generando desde loan tape (rate_type=fixed)",
             msg.target_id,
         )
-        spi_df = build_and_persist(
-            loan_tape=loan_tape,
+        spi_df = pl.from_pandas(build_and_persist(
+            loan_tape=loan_tape.to_pandas(),
             company_id=company_id,
             columns=LoanTapeColumns(),
-        )
+        ))
         log.info("SPI generado y persistido: %d cuotas", len(spi_df))
 
     calc_date = msg.metadata.calc_date or date.today()
 
-    # 3. Calcular productos solicitados
+    # 3. Calcular productos — cada compute devuelve solo (key + cols nuevas),
+    # sin tocar el loan_tape. Al final un único join contra el loan_tape.
+    enrichments: list[pl.DataFrame] = []
+
     if "dpd" in msg.metadata.products:
-        loan_tape = product_dpd.compute(
+        enrichments.append(product_dpd.compute(
             loan_tape=loan_tape,
             spi_df=spi_df,
             payments_df=payments_df,
             key=msg.key,
             calc_date=calc_date,
-            paid_threshold=msg.metadata.paid_threshold
-        )
+            paid_threshold=msg.metadata.paid_threshold,
+        ))
         log.info("DPD calculado")
 
     if "total_amount" in msg.metadata.products:
-        loan_tape = product_total_amount.compute(
+        enrichments.append(product_total_amount.compute(
             loan_tape=loan_tape,
             payments_df=payments_df,
             key=msg.key,
-        )
+        ))
         log.info("total_amount calculado")
 
     if "vpn" in msg.metadata.products:
-        loan_tape = product_vpn.compute(
+        enrichments.append(product_vpn.compute(
             loan_tape=loan_tape,
             spi_df=spi_df,
             key=msg.key,
             interest_rate=msg.metadata.interest_rate,
             calc_date=calc_date,
-        )
+        ))
         log.info("VPN calculado")
 
+    # Combinar enrichments entre sí (pequeños) y luego un único join al loan_tape.
+    if enrichments:
+        combined = enrichments[0]
+        for e in enrichments[1:]:
+            combined = combined.join(e, on=msg.key, how="left")
+        loan_tape = loan_tape.join(combined, on=msg.key, how="left")
+
     # 4. Columnas de trazabilidad
-    loan_tape["last_update_date"] = datetime.now(tz=timezone.utc).isoformat()
-    loan_tape["payment_tape_ref"] = msg.job_id
+    loan_tape = loan_tape.with_columns([
+        pl.lit(datetime.now(tz=timezone.utc).isoformat()).alias("last_update_date"),
+        pl.lit(msg.job_id).alias("payment_tape_ref"),
+    ])
 
     # 5. Escribir output en S3
     write_loan_tape(loan_tape, msg.output_file)
