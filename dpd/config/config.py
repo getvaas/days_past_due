@@ -129,10 +129,11 @@ class DBConfig:
     def load(cls) -> "DBConfig":
         """Resuelve la config según el entorno.
 
-        En Lambda (AWS_LAMBDA_FUNCTION_NAME presente) lee Secrets Manager;
+        En Lambda/Batch (variables AWS presentes) lee Secrets Manager;
         en local lee variables de entorno / .env.
         """
-        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        in_aws = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get("AWS_BATCH_JOB_ID")
+        if in_aws:
             return cls.from_secrets_manager()
         return cls.from_env()
 
