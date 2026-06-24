@@ -82,20 +82,14 @@ def _process_message(msg: InboundMessage) -> None:
         submit_job(payload, config.BATCH_JOB_QUEUE, config.BATCH_JOB_DEFINITION)
         return
 
-    # 2. Leer output previo para recuperar dpd_max histórico (puede no existir en el primer run)
-    previous_output = try_read_loan_tape(msg.output_file)
-    if previous_output is not None:
-        log.info("Output previo encontrado: %d filas — dpd_max recuperado", len(previous_output))
-    else:
-        log.info("Sin output previo — dpd_max = dpd_current (primer run)")
-
-    # 3. Leer datos de payments_db usando company_id directo desde el evento.
+    # 2. Leer datos de payments_db usando company_id directo desde el evento.
     company_id = msg.target_id
 
     spi_df = load_schedule(company_id)
     payments_df = load_payment_tape(company_id)
     log.info("DB: %d cuotas | %d pagos", len(spi_df), len(payments_df))
 
+    ##TODO A chequear cuando hagamos VPN
     if spi_df.empty:
         if msg.rate_type == "variable":
             # Tasa variable: no se puede generar el SPI automáticamente.
@@ -122,7 +116,7 @@ def _process_message(msg: InboundMessage) -> None:
 
     calc_date = msg.metadata.calc_date or date.today()
 
-    # 4. Calcular productos solicitados
+    # 3. Calcular productos solicitados
     if "dpd" in msg.metadata.products:
         loan_tape = product_dpd.compute(
             loan_tape=loan_tape,
@@ -130,8 +124,7 @@ def _process_message(msg: InboundMessage) -> None:
             payments_df=payments_df,
             key=msg.key,
             calc_date=calc_date,
-            paid_threshold=msg.metadata.paid_threshold,
-            previous_output=previous_output,
+            paid_threshold=msg.metadata.paid_threshold
         )
         log.info("DPD calculado")
 
@@ -153,15 +146,15 @@ def _process_message(msg: InboundMessage) -> None:
         )
         log.info("VPN calculado")
 
-    # 5. Columnas de trazabilidad
+    # 4. Columnas de trazabilidad
     loan_tape["last_update_date"] = datetime.now(tz=timezone.utc).isoformat()
     loan_tape["payment_tape_ref"] = msg.job_id
 
-    # 6. Escribir output en S3
+    # 5. Escribir output en S3
     write_loan_tape(loan_tape, msg.output_file)
     log.info("Output escrito en %s", msg.output_file)
 
-    # 7. Construir y publicar respuesta
+    # 6. Construir y publicar respuesta
     last_dates = read_last_dates(company_id=company_id)
 
     response = OutboundMessage.from_inbound(msg)

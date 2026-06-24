@@ -29,8 +29,7 @@ def compute(
     calc_date: date | None = None,
     grace_days: int = 1,
     mode: str = "cascade",
-    paid_threshold: float = 1.0,
-    previous_output: Optional[pd.DataFrame] = None,
+    paid_threshold: float = 1.0
 ) -> pd.DataFrame:
     """Calcula DPD por contrato y lo agrega al loan tape.
 
@@ -44,8 +43,6 @@ def compute(
         grace_days:       Días calendario de gracia. Default: 1.
         mode:             "cascade" (default) | "join".
         paid_threshold:   Fracción mínima pagada para considerar cuota al día (default 1.0 = 100%).
-        previous_output:  Output del run anterior (leído desde S3) para recuperar dpd_max.
-                          Si es None, dpd_max = dpd_current (primer run o sin historial).
 
     Returns:
         loan_tape con columnas `dpd_current`, `dpd_max` y `amount_in_arrears` agregadas.
@@ -70,6 +67,7 @@ def compute(
     pay_aligned = pay_clean.copy()
 
     cfg = RunConfig(
+        ##TODO tiene que mandar el company_id correspondiente
         company_id=0,
         mode=mode,
         partial_payment_counts=False,
@@ -133,16 +131,4 @@ def compute(
     out["dpd_current"] = out["dpd_current"].fillna(0).astype(int)
     out["amount_in_arrears"] = out["amount_in_arrears"].fillna(0.0)
 
-    # dpd_max: high-watermark histórico.
-    # Si hay output previo con dpd_max, tomamos max(prev, current). Si no, dpd_max = dpd_current.
-    if previous_output is not None and "dpd_max" in previous_output.columns and key in previous_output.columns:
-        prev_max = previous_output[[key, "dpd_max"]].copy()
-        prev_max["dpd_max"] = pd.to_numeric(prev_max["dpd_max"], errors="coerce").fillna(0).astype(int)
-        out = out.merge(prev_max.rename(columns={"dpd_max": "_prev_dpd_max"}), on=key, how="left")
-        out["_prev_dpd_max"] = out["_prev_dpd_max"].fillna(0).astype(int)
-        out["dpd_max"] = out[["dpd_current", "_prev_dpd_max"]].max(axis=1)
-        out = out.drop(columns=["_prev_dpd_max"])
-    else:
-        out["dpd_max"] = out["dpd_current"]
-
-    return out
+    return out["dpd_current"]

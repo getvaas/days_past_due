@@ -27,23 +27,20 @@ def compute(
         loan_tape con columna `total_amount_paid` agregada.
     """
     if payments_df.empty:
-        out = loan_tape.copy()
-        out["total_amount_paid"] = 0.0
-        return out
+        loan_tape["total_amount_paid"] = 0.0
+        return loan_tape
 
-    pay = payments_df.copy()
-    pay["total_payment"] = pd.to_numeric(pay["total_payment"], errors="coerce").fillna(0)
-
-    # Filtrar pagos válidos
-    pay = pay[pay["total_payment"] > 0]
+    amt = pd.to_numeric(payments_df["total_payment"], errors="coerce")
+    mask = amt > 0  # NaN > 0 es False, así que filtra inválidos y no positivos
 
     total_by_contract = (
-        pay.groupby("borrower_contract_id", as_index=False)
-           .agg(total_amount_paid=("total_payment", "sum"))
-           .rename(columns={"borrower_contract_id": key})
+        payments_df.loc[mask, ["borrower_contract_id"]]
+        .assign(amt=amt[mask])
+        .groupby("borrower_contract_id", as_index=False, sort=False)["amt"]
+        .sum()
+        .rename(columns={"borrower_contract_id": key, "amt": "total_amount_paid"})
     )
 
-    out = loan_tape.copy()
-    out = out.merge(total_by_contract, on=key, how="left")
-    out["total_amount_paid"] = out["total_amount_paid"].fillna(0.0)
-    return out
+    loan_tape = loan_tape.merge(total_by_contract, on=key, how="left")
+    loan_tape["total_amount_paid"] = loan_tape["total_amount_paid"].fillna(0.0)
+    return loan_tape
