@@ -114,9 +114,12 @@ pipeline {
                 script {
                     def parameters = AWS_PARAMETERS[targetEnvironment]
                     def dockerImage = "${parameters['ECR_REPOSITORY_URL']}:${GIT_SHORT_COMMIT}"
+                    def latestImage = "${parameters['ECR_REPOSITORY_URL']}:latest"
                     withAWS(credentials: parameters['JENKINS_CREDENTIAL_ID'], region: parameters['AWS_REGION']) {
                         sh "aws ecr get-login-password --region ${parameters['AWS_REGION']} | docker login --username AWS --password-stdin ${parameters['ECR_LOGIN_URL']}"
                         sh "docker push ${dockerImage}"
+                        sh "docker tag ${dockerImage} ${latestImage}"
+                        sh "docker push ${latestImage}"
                     }
                 }
             }
