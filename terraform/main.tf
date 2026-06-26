@@ -4,7 +4,9 @@
 module "cloudwatch" {
   source = "./modules/cloudwatch"
 
-  cloudwatch_configuration = local.cloudwatch_configuration
+  log_group_name    = "/aws/lambda/${local.lambda_name}"
+  retention_in_days = var.log_retention_in_days
+  environment       = var.environment
 }
 
 # 1. Topic SNS de entrada. Solo se crea si el Enricher no posee ya uno
@@ -44,24 +46,20 @@ module "sns_subscription" {
 # 5. Rol IAM + política para la Lambda.
 module "iam_lambda_dpd" {
   source = "./modules/iam_lambda"
-  iam_configuration = {
-    role_lambda_name   = "${var.environment}-days-past-due-lambda-role"
-    policy_lambda_name = "${var.environment}-days-past-due-lambda-policy"
-    policy_lambda_actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:ListBucket",
-      "secretsmanager:GetSecretValue",
-      "sns:Publish",
-      "sqs:ReceiveMessage",
-      "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes",
-      "batch:SubmitJob",
-    ]
-  }
+
+  lambda_role_name   = "${var.environment}-days-past-due-lambda-role"
+  lambda_policy_name = "${var.environment}-days-past-due-lambda-policy"
+  lambda_policy_actions = [
+    "s3:GetObject",
+    "s3:PutObject",
+    "s3:ListBucket",
+    "secretsmanager:GetSecretValue",
+    "sns:Publish",
+    "sqs:ReceiveMessage",
+    "sqs:DeleteMessage",
+    "sqs:GetQueueAttributes",
+    "batch:SubmitJob",
+  ]
 }
 
 # 7. Función Lambda DPD — imagen Docker desde ECR compartido.
@@ -94,10 +92,9 @@ module "ecr_dpd" {
 module "cloudwatch_batch" {
   source = "./modules/cloudwatch"
 
-  cloudwatch_configuration = {
-    log_group_name    = "/aws/batch/${local.batch_name}"
-    retention_in_days = var.log_retention_in_days != null ? var.log_retention_in_days : (var.environment == "dev" ? 1 : 7)
-  }
+  log_group_name    = "/aws/batch/${local.batch_name}"
+  retention_in_days = var.log_retention_in_days
+  environment       = var.environment
 }
 
 # 10. IAM roles para el Batch job (job role + execution role).
