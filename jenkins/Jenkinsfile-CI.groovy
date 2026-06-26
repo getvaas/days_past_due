@@ -52,6 +52,7 @@ pipeline {
     }
     environment {
         PATH="/usr/local/bin:/var/lib/jenkins/.local/bin:${env.PATH}"
+        GIT_SSH_COMMAND = "ssh -o StrictHostKeyChecking=no"
     }
     stages {
         stage('Checkout SCM') {
