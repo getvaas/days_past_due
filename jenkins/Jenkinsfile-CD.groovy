@@ -83,6 +83,7 @@ pipeline {
                 script {
                     def parameters = AWS_PARAMETERS[targetEnvironment]
                     withAWS(credentials: parameters['JENKINS_CREDENTIAL_ID'], region: parameters['AWS_REGION']) {
+                        sh "mkdir -p ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts"
                         sh "cd ${terraformFolder} && \
                         rm -rf .terraform* && \
                         terraform init -backend-config=${terraformConfigBaseFolder}/${parameters['ENV']}/backend.conf && \

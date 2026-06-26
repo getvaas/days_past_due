@@ -117,6 +117,7 @@ pipeline {
                         def awsRegion = "${AWS_PARAMETERS[targetEnvironment]['AWS_REGION']}"
                         def terraformConfigFolder = "${AWS_PARAMETERS[targetEnvironment]['TERRAFORM_CONFIG_FOLDER']}"
                         withAWS(credentials: jenkinsCredentialId, region: awsRegion) {
+                            sh "mkdir -p ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts"
                             sh "cd terraform && \
                             rm -rf .terraform* && \
                             terraform init -backend-config=configuration/${terraformConfigFolder}/backend.conf && \
