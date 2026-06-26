@@ -77,7 +77,8 @@ def process_loan_tape(msg: InboundMessage, loan_tape: pl.DataFrame) -> None:
     payments_df = pl.from_pandas(load_payment_tape(company_id))
     log.info("DB: %d cuotas | %d pagos", len(spi_df), len(payments_df))
 
-    ##TODO A chequear cuando hagamos VPN
+    ##TODO Falta respues de VPN
+    """
     if spi_df.is_empty():
         if msg.rate_type == "variable":
             # Tasa variable: no se puede generar el SPI automáticamente.
@@ -101,6 +102,7 @@ def process_loan_tape(msg: InboundMessage, loan_tape: pl.DataFrame) -> None:
             columns=LoanTapeColumns(),
         ))
         log.info("SPI generado y persistido: %d cuotas", len(spi_df))
+    """
 
     calc_date = msg.metadata.calc_date or date.today()
 
@@ -109,15 +111,26 @@ def process_loan_tape(msg: InboundMessage, loan_tape: pl.DataFrame) -> None:
     enrichments: list[pl.DataFrame] = []
 
     if "dpd" in msg.metadata.products:
-        enrichments.append(product_dpd.compute(
-            loan_tape=loan_tape,
-            spi_df=spi_df,
-            payments_df=payments_df,
-            key=msg.key,
-            calc_date=calc_date,
-            paid_threshold=msg.metadata.paid_threshold,
-        ))
-        log.info("DPD calculado")
+        if msg.mode is None:
+            cascade = product_dpd.compute(
+                loan_tape=loan_tape, spi_df=spi_df, payments_df=payments_df,
+                key=msg.key, calc_date=calc_date, paid_threshold=msg.metadata.paid_threshold,
+                mode="cascade",
+            ).rename({"dpd_current": "dpd_current_cascade", "amount_in_arrears": "amount_in_arrears_cascade"})
+            join = product_dpd.compute(
+                loan_tape=loan_tape, spi_df=spi_df, payments_df=payments_df,
+                key=msg.key, calc_date=calc_date, paid_threshold=msg.metadata.paid_threshold,
+                mode="join",
+            ).rename({"dpd_current": "dpd_current_join", "amount_in_arrears": "amount_in_arrears_join"})
+            enrichments.append(cascade.join(join, on=msg.key, how="left"))
+            log.info("DPD calculado (cascade + join)")
+        else:
+            enrichments.append(product_dpd.compute(
+                loan_tape=loan_tape, spi_df=spi_df, payments_df=payments_df,
+                key=msg.key, calc_date=calc_date, paid_threshold=msg.metadata.paid_threshold,
+                mode=msg.mode,
+            ))
+            log.info("DPD calculado (mode=%s)", msg.mode)
 
     if "total_amount" in msg.metadata.products:
         enrichments.append(product_total_amount.compute(

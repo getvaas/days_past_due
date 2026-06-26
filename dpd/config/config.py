@@ -46,15 +46,7 @@ def _load_dotenv(path: Path) -> None:
 _load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
-# ── Constantes a nivel módulo para los clients (Company Provider / M2M) ──
-# Se leen del entorno (.env en local; variables de la Lambda en la nube).
-COMPANY_API = os.environ.get("COMPANY_API", "")
-AUTH0_CLIENT_ID_PARAM = os.environ.get("AUTH0_CLIENT_ID_PARAM", "")
-AUTH0_CLIENT_SECRET_PARAM = os.environ.get("AUTH0_CLIENT_SECRET_PARAM", "")
-AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE", "")
-AUTH0_ENDPOINT = os.environ.get("AUTH0_ENDPOINT", "")
 AWS_PROFILE_NAME = os.environ.get("AWS_PROFILE_NAME") or None
-VAAS_SECRET_NAME = os.environ.get("VAAS_SECRET_NAME", "")
 
 # True cuando NO corre en Lambda (AWS inyecta AWS_LAMBDA_FUNCTION_NAME).
 LOCAL_ENV = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is None
@@ -63,9 +55,6 @@ LOCAL_ENV = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is None
 BATCH_ROW_THRESHOLD: int = int(os.environ.get("BATCH_ROW_THRESHOLD", "5000"))
 BATCH_JOB_QUEUE: str = os.environ.get("BATCH_JOB_QUEUE", "")
 BATCH_JOB_DEFINITION: str = os.environ.get("BATCH_JOB_DEFINITION", "")
-
-# Cache mutable del token M2M; lo setea machine_to_machine.get_token().
-M2M_TOKEN = ""
 
 
 # Claves esperadas dentro del JSON del secret de Payments (Secrets Manager).

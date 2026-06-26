@@ -52,6 +52,7 @@ def _process_message(msg: InboundMessage) -> None:
             "target_type": msg.target_type,
             "target_id": msg.target_id,
             "rate_type": msg.rate_type,
+            "mode": msg.mode,
             "metadata": msg.metadata.to_dict(),
         }
         submit_job(payload, config.BATCH_JOB_QUEUE, config.BATCH_JOB_DEFINITION)

@@ -65,7 +65,8 @@ class InboundMessage:
     target_type: str     # "COMPANY"
     target_id: int       # company_id numérico
     metadata: MessageMetadata
-    rate_type: str = "fixed"  # "fixed" | "variable". Variable omite generación de SPI.
+    rate_type: str = "fixed"           # "fixed" | "variable"
+    mode: Optional[str] = None         # "cascade" | "join" | None → ambos modos
 
     @classmethod
     def from_sqs_record(cls, record: dict) -> "InboundMessage":
@@ -82,6 +83,7 @@ class InboundMessage:
             target_id=int(body["target_id"]),
             metadata=MessageMetadata.from_dict(body.get("metadata", {})),
             rate_type=body.get("rate_type", "fixed"),
+            mode=body.get("mode"),
         )
 
 
