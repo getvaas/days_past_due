@@ -31,6 +31,14 @@ resource "aws_batch_job_definition" "this" {
 
   platform_capabilities = ["FARGATE"]
 
+  # AWS normalizes the stored JSON (adds defaults, reorders keys), causing
+  # perpetual drift on every plan. Since Batch Fargate pulls :latest at
+  # job-run time, updating this on every deploy would only create unnecessary
+  # new revisions and invalidate the ARN stored in Lambda's env vars.
+  lifecycle {
+    ignore_changes = [container_properties]
+  }
+
   container_properties = jsonencode({
     image            = var.ecr_image_uri
     command          = ["python", "-m", "dpd.batch_handler"]

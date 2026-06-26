@@ -78,7 +78,7 @@ pipeline {
                 }
             }
         }
-        stage('Apply terraform changes') {
+        stage('Apply ECR') {
             steps {
                 script {
                     def parameters = AWS_PARAMETERS[targetEnvironment]
@@ -87,7 +87,7 @@ pipeline {
                         sh "cd ${terraformFolder} && \
                         rm -rf .terraform* && \
                         terraform init -backend-config=${terraformConfigBaseFolder}/${parameters['ENV']}/backend.conf && \
-                        terraform apply \
+                        terraform apply -target=module.ecr_dpd \
                             -var-file=${terraformConfigBaseFolder}/${parameters['ENV']}/vars.tfvars \
                             -var-file=${terraformConfigBaseFolder}/global.tfvars \
                             -auto-approve && \
@@ -121,6 +121,23 @@ pipeline {
                         sh "docker push ${dockerImage}"
                         sh "docker tag ${dockerImage} ${latestImage}"
                         sh "docker push ${latestImage}"
+                    }
+                }
+            }
+        }
+        stage('Apply Full Terraform') {
+            steps {
+                script {
+                    def parameters = AWS_PARAMETERS[targetEnvironment]
+                    withAWS(credentials: parameters['JENKINS_CREDENTIAL_ID'], region: parameters['AWS_REGION']) {
+                        sh "cd ${terraformFolder} && \
+                        terraform plan \
+                            -var-file=${terraformConfigBaseFolder}/${parameters['ENV']}/vars.tfvars \
+                            -var-file=${terraformConfigBaseFolder}/global.tfvars \
+                            -out=tfplan && \
+                        terraform show -json tfplan > tfplan.json && \
+                        terraform apply tfplan && \
+                        cd -"
                     }
                 }
             }
