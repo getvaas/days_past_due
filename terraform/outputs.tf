@@ -23,16 +23,6 @@ output "inbound_topic_arn" {
   description = "ARN del topic SNS de entrada (creado acá o el del Enricher)."
 }
 
-output "s3_loan_tape_bucket_name" {
-  value       = module.s3_loan_tape.bucket_name
-  description = "Nombre del bucket S3 donde la Lambda lee y escribe los loan tapes."
-}
-
-output "s3_loan_tape_bucket_arn" {
-  value       = module.s3_loan_tape.bucket_arn
-  description = "ARN del bucket. Necesario para la policy IAM del rol Lambda."
-}
-
 output "log_group_name" {
   value       = module.cloudwatch.cloudwatch_log_group_name
   description = "Log group de CloudWatch donde escribirá la Lambda."

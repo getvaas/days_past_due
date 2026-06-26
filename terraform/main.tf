@@ -49,16 +49,7 @@ module "sns_subscription" {
   queue_url     = module.sqs.queue_url
 }
 
-# 5. Bucket S3 para loan tapes (input y output de la Lambda).
-#    La Lambda lee el loan tape desde input_file y escribe el resultado en output_file,
-#    ambos paths apuntan a este bucket.
-module "s3_loan_tape" {
-  source      = "git@github.com:getvaas/tf_modules.git//s3"
-  bucket_name = "${var.environment}-days-past-due-loan-tape"
-  environment = var.environment
-}
-
-# 6. Rol IAM + política para la Lambda.
+# 5. Rol IAM + política para la Lambda.
 module "iam_lambda_dpd" {
   source = "git@github.com:getvaas/tf_modules.git//iam_lambda"
   iam_configuration = {
