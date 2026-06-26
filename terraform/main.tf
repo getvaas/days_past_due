@@ -43,7 +43,7 @@ module "sns_subscription" {
 
 # 5. Rol IAM + política para la Lambda.
 module "iam_lambda_dpd" {
-  source = "git@github.com:getvaas/tf_modules.git//iam_lambda"
+  source = "./modules/iam_lambda"
   iam_configuration = {
     role_lambda_name   = "${var.environment}-days-past-due-lambda-role"
     policy_lambda_name = "${var.environment}-days-past-due-lambda-policy"
@@ -66,7 +66,7 @@ module "iam_lambda_dpd" {
 
 # 7. Función Lambda DPD — imagen Docker desde ECR compartido.
 module "lambda_dpd" {
-  source               = "git@github.com:getvaas/tf_modules.git//lambda_docker"
+  source               = "./modules/lambda_docker"
   name                 = local.lambda_name
   memory_size          = var.lambda_memory_size
   timeout              = var.visibility_timeout
@@ -86,13 +86,13 @@ module "lambda_dpd" {
 
 # 8. ECR compartido — Lambda y Batch usan la misma imagen Docker.
 module "ecr_dpd" {
-  source = "git@github.com:getvaas/tf_modules.git//ecr"
+  source = "./modules/ecr"
   name   = "${var.environment}-days-past-due-repository"
 }
 
 # 9. CloudWatch log group para el Batch job.
 module "cloudwatch_batch" {
-  source = "git@github.com:getvaas/tf_modules.git//cloudwatch"
+  source = "./modules/cloudwatch"
 
   cloudwatch_configuration = {
     log_group_name    = "/aws/batch/${local.batch_name}"
