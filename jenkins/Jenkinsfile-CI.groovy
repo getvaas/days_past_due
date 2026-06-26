@@ -45,7 +45,7 @@ def sourceUrl = '-'
 def targetEnvironment = '-'
 pipeline {
     agent {
-        label 'x86-agent'
+        label 'arm-agent'
     }
     options {
         skipDefaultCheckout(true)

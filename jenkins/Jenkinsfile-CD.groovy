@@ -45,7 +45,7 @@ def AWS_PARAMETERS = [
 ]
 pipeline {
     agent {
-        label 'x86-agent'
+        label 'arm-agent'
     }
     environment {
         PATH="/usr/local/bin:/var/lib/jenkins/.local/bin:${env.PATH}"
@@ -117,6 +117,16 @@ pipeline {
                     withAWS(credentials: parameters['JENKINS_CREDENTIAL_ID'], region: parameters['AWS_REGION']) {
                         sh "aws ecr get-login-password --region ${parameters['AWS_REGION']} | docker login --username AWS --password-stdin ${parameters['ECR_LOGIN_URL']}"
                         sh "docker push ${dockerImage}"
+                    }
+                }
+            }
+        }
+        stage('Upload to S3') {
+            steps {
+                script {
+                    withAWS(credentials: AWS_PARAMETERS[targetEnvironment]['JENKINS_CREDENTIAL_ID'], region: AWS_PARAMETERS[targetEnvironment]['AWS_REGION']) {
+                        sh "aws s3 cp ${terraformFolder}/tfplan s3://${AWS_PARAMETERS[targetEnvironment]['S3_BUCKET_NAME']}/history/previous_version/tfplan"
+                        sh "aws s3 cp ${terraformFolder}/tfplan.json s3://${AWS_PARAMETERS[targetEnvironment]['S3_BUCKET_NAME']}/history/previous_version/tfplan.json"
                     }
                 }
             }
