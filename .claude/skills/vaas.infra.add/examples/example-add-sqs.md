@@ -2,7 +2,7 @@
 
 ## Contexto
 
-El proyecto `documents-api` necesita una cola SQS para procesar eventos de documentos generados. Se crea con SNS topic, dead-letter queue, y alarmas CloudWatch.
+El proyecto `project-name` necesita una cola SQS para procesar eventos de documentos generados. Se crea con SNS topic, dead-letter queue, y alarmas CloudWatch.
 
 ## Archivos modificados
 
@@ -14,7 +14,7 @@ Copiar el módulo completo de `common-recipes.md → SQS/SNS` (main.tf, input.tf
 
 ```hcl
 module "document_generated_queue" {
-  source               = "./sns_sqs"
+  source               = "git@github.com:getvaas/tf_modules.git//sns_sqs"
   name                 = replace("${local.name}-document-generated", "-", "_")
   visibility_timeout   = 1800
   max_receive_count    = 10

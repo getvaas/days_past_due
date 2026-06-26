@@ -11,10 +11,37 @@ Agrega un recurso nuevo (S3, SQS, SNS, Parameter Store, Secrets Manager, Lambda,
 
 ## Restricciones
 
-- **Solo genera archivos**. Nunca ejecuta `terraform plan` ni `terraform apply`.
+- **Operaciones permitidas** (read-only):
+  - `terraform plan` (vía `make plan ENV=<env>`) — opcionalmente al final, para validar el recurso agregado antes de que el developer haga `make apply`.
+  - `aws sso login` — solo cuando el developer lo elige explícitamente en el prompt de credenciales. Nunca se ejecuta de forma automática.
+- **Operaciones prohibidas** (state-modifying):
+  - `terraform apply`, `terraform destroy`, `terraform import`, `terraform state *`.
+  - Cualquier comando que modifique recursos en AWS.
+- **No auto-retry de credenciales**: si `make plan` falla por cualquier motivo, se informa el error textual al developer y se sugiere el comando manual. No se vuelve a intentar automáticamente.
 - **Respeta las convenciones existentes** del proyecto — lee la infra actual antes de generar.
 - **Usa los módulos de tf_modules** — nunca crea recursos directamente.
 - **Actualiza** main.tf, inputs.tf, locals.tf según corresponda.
+
+## Prompt de credenciales AWS (compartido con `vaas.infra.setup` y `vaas.infra.plan`)
+
+Antes de ejecutar cualquier `make plan ENV=<env>`, la skill debe preguntar al developer cómo manejar las credenciales AWS. Nunca corre `aws sso login` sin que el developer lo elija explícitamente, y nunca reintenta automáticamente.
+
+**Prompt exacto** (sustituir `<env>` y `<profile>` por los valores reales):
+
+```
+Para correr `make plan ENV=<env>` necesito credenciales AWS válidas.
+  1) Ya tengo credenciales cargadas (env vars o `aws sso login` previo) — correr plan directo.
+  2) Hacer `aws sso login --profile <profile>` ahora antes del plan.
+  3) Cancelar — no correr plan.
+```
+
+**Acciones según la respuesta:**
+
+- **Opción 1**: ejecutar `make plan ENV=<env>` directo. Si falla, informar error textual y sugerir comando manual. **No reintentar.**
+- **Opción 2**: ejecutar `aws sso login --profile <profile>`. Si falla, informar error y no correr plan. Si OK, ejecutar `make plan ENV=<env>` y aplicar la misma lógica que la opción 1.
+- **Opción 3**: no correr plan. Continuar el flujo sin output.
+
+**Resolución del `<profile>`**: leer `deploy/terraform/configuration/<env>/profile.tfvars`, extraer línea no comentada `profile = "<X>"`. Si no existe o está comentada, usar `default`.
 
 ## Referencias
 
@@ -87,9 +114,25 @@ Si el servicio ECS necesita acceso al nuevo recurso, actualizar los `ecs_policy_
 ### Paso 6: Explicar al developer
 
 1. **Qué archivos se crearon/modificaron** — lista con 1 línea por archivo
-2. **Cómo verificar** — `make plan ENV=dev`
+2. **Cómo verificar** — `make plan ENV=dev` (la skill puede ofrecer correrlo en el paso 7)
 3. **Valores pendientes** — si hay placeholders `TODO_*`
 4. **Permisos IAM actualizados** — qué acciones se agregaron y por qué
+
+### Paso 7: Ofrecer correr `make plan` (opcional)
+
+Después de generar los archivos, preguntar al developer si quiere validar con `make plan` antes de hacer `make apply` manualmente.
+
+**Precondiciones para ofrecer plan:**
+
+- No hay `TODO_*` pendientes en `deploy/terraform/configuration/`. Si hay, omitir este paso y sugerir completar los placeholders primero.
+- El developer no canceló explícitamente la verificación.
+
+**Si el developer acepta correr plan:**
+
+1. Resolver el ambiente. Default: `dev`. Valores aceptados: `dev`, `stg`, `prod`.
+2. Aplicar el **Prompt de credenciales AWS** (ver sección superior del archivo) con el `<env>` resuelto y el `<profile>` leído de `deploy/terraform/configuration/<env>/profile.tfvars`.
+3. Mostrar el output del plan al developer (si hubo) o el error textual con sugerencias manuales (si falló).
+4. No correr `make apply` — es siempre paso manual del developer.
 
 ## Ejemplos
 

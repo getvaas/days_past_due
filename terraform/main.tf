@@ -174,3 +174,30 @@ module "sqs_invoke" {
   batch_size                         = var.sqs_batch_size
   maximum_batching_window_in_seconds = var.sqs_batching_window_seconds
 }
+
+# 12. Topic SNS de respuesta — Lambda y Batch publican el resultado del cálculo DPD.
+module "sns_response" {
+  source      = "./modules/sns"
+  environment = var.environment
+  name        = "${local.name}_response"
+  fifo_topic  = false
+}
+
+# 13. Cola SQS de respuesta + DLQ — downstream consume los resultados DPD desde acá.
+module "sqs_response" {
+  source               = "./modules/sqs"
+  environment          = var.environment
+  name                 = "${local.name}_response"
+  fifo_queue           = false
+  visibility_timeout   = 300
+  sns_alarms_topic_arn = var.sns_alarms_topic_arn
+}
+
+# 14. Suscripción SNS respuesta -> SQS respuesta.
+module "sns_response_subscription" {
+  source        = "./modules/sns_subscription"
+  environment   = var.environment
+  sns_topic_arn = module.sns_response.sns_topic_arn
+  queue_arn     = module.sqs_response.queue_arn
+  queue_url     = module.sqs_response.queue_url
+}

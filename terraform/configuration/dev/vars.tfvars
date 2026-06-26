@@ -16,7 +16,7 @@ lambda_image_tag   = "latest"
 lambda_memory_size = 512
 
 # ARN del topic SNS donde la Lambda publica la respuesta enriquecida.
-# Completar cuando se cree el topic de respuesta.
+# Se completa después del primer apply con el output response_sns_topic_arn.
 sns_response_topic_arn = ""
 
 # ─── Batch ───────────────────────────────────────────────────────────────────────

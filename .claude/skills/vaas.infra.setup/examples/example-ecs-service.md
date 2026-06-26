@@ -1,4 +1,4 @@
-# Ejemplo: ECS Service — API Java/Spring (como documents-api)
+# Ejemplo: ECS Service — API Java/Spring (como project-name)
 
 Este ejemplo muestra la infraestructura completa para una API Java/Spring Boot corriendo en ECS, con S3, SQS/SNS, y secretos de Secrets Manager.
 
@@ -6,10 +6,10 @@ Este ejemplo muestra la infraestructura completa para una API Java/Spring Boot c
 
 ## Contexto
 
-- **Servicio**: `documents-api` — API REST de documentos
+- **Servicio**: `project-name` — API REST de documentos
 - **Stack**: Java 17 + Spring Boot + Gradle
 - **Puerto**: 80 (dentro del contenedor)
-- **Path del ALB**: `/api/documents/v2/*`
+- **Path del ALB**: `/api/project-name/*`
 - **Recursos adicionales**: S3 (almacenamiento), SQS/SNS (eventos), Secrets Manager (DB credentials, API keys)
 
 ---
@@ -47,12 +47,12 @@ provider "aws" {
 
 # Módulos
 module "iam_orchestrator" {
-  source           = "./iam"
+  source           = "git@github.com:getvaas/tf_modules.git//iam"
   iam_orchestrator = local.iam_orchestrator
 }
 
 module "ecr_orchestrator" {
-  source           = "./ecr"
+  source           = "git@github.com:getvaas/tf_modules.git//ecr"
   ecr_orchestrator = local.ecr_orchestrator
 }
 
@@ -62,7 +62,7 @@ module "ecs_service" {
   ecs_memory_min            = local.ecs_cluster_configuration.memory
   ecs_cpu_millis_min        = local.ecs_cluster_configuration.cpu
   ecr_repository_uri        = module.ecr_orchestrator.ecr_repository_uri
-  ecs_service_name          = "${var.environment}-documents-api"
+  ecs_service_name          = "${var.environment}-project-name"
   container_port            = local.target_group_configuration.port
   environment               = var.environment
   health_check_path         = local.target_group_configuration.health_check_path
@@ -94,14 +94,14 @@ module "ecs_service" {
 }
 
 module "s3" {
-  source        = "./s3"
-  bucket_name   = "documents-api"
+  source        = "git@github.com:getvaas/tf_modules.git//s3"
+  bucket_name   = "project-name"
   bucket_prefix = "gf78999f"
   environment   = var.environment
 }
 
 module "events_queue" {
-  source               = "./sns_sqs"
+  source               = "git@github.com:getvaas/tf_modules.git//sns_sqs"
   name                 = replace("${local.name}-events", "-", "_")
   visibility_timeout   = 1800
   max_receive_count    = 10
@@ -162,8 +162,8 @@ locals {
   name = "${var.environment}-${var.project_name_snake_case}"
 
   iam_orchestrator = {
-    role_ecs_name   = "${var.environment}-documents-api-ecs-role"
-    policy_ecs_name = "${var.environment}-documents-api-ecs-policy"
+    role_ecs_name   = "${var.environment}-project-name-ecs-role"
+    policy_ecs_name = "${var.environment}-project-name-ecs-policy"
     ecs_policy_actions = [
       "ecr:GetAuthorizationToken",
       "ecr:GetDownloadUrlForLayer",
@@ -182,7 +182,7 @@ locals {
   }
 
   ecr_orchestrator = {
-    name = "${var.environment}-documents-api-repository"
+    name = "${var.environment}-project-name-repository"
   }
 
   ecs_cluster_configuration = {
@@ -216,8 +216,8 @@ project_name_acronym_snake_case = "documents"
 component_name_camel_case       = "Api"
 component_name_snake_case       = "api"
 author                          = "team@getvaas.com"
-cost_center                     = "DocumentsApi"
-github_repository               = "documents-api"
+cost_center                     = "ProjectName"
+github_repository               = "project-name"
 ```
 
 ---
@@ -232,7 +232,7 @@ vpc_id                = "vpc-0fb53b76f02cbe650"
 listener_https_arn    = "arn:aws:elasticloadbalancing:us-east-1:052650215423:listener/app/LB-Dev-Pub-AppLoadBalancer/7bac3213d92ada71/49839fb562ea4760"
 capacity_provider     = "dev_arm_large_one_cluster_capacity_provider"
 sns_alarms_topic_arn  = "arn:aws:sns:us-east-1:052650215423:dev-borbotones-alarms-topic"
-api_credentials_secret_manager = "arn:aws:secretsmanager:us-east-1:052650215423:secret:dev-documents-api-secret-manager-XXXXXX"
+api_credentials_secret_manager = "arn:aws:secretsmanager:us-east-1:052650215423:secret:dev-project-name-secret-manager-XXXXXX"
 
 environment_variables = {
   SERVER_PORT          = "80"
@@ -249,5 +249,5 @@ bucket         = "6fc5w786-dev-terraform-states-bucket"
 encrypt        = true
 region         = "us-east-1"
 dynamodb_table = "dev-terraform-lock-table"
-key            = "documents-api/terraform.tfstate"
+key            = "project-name/terraform.tfstate"
 ```

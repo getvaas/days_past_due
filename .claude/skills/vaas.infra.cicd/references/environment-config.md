@@ -46,13 +46,13 @@ Valores de infraestructura por ambiente. Estos valores son constantes compartida
 
 | Tipo | Patrón |
 |------|--------|
-| ARM (default) | `<env>_arm_large_one_cluster_capacity_provider` |
+| ARM (default) | `<env>_arm_one_cluster_capacity_provider` |
 | x86 | `<env>_x86_one_cluster_capacity_provider` |
 
 Ejemplos:
-- dev ARM: `dev_arm_large_one_cluster_capacity_provider`
-- stg ARM: `stg_arm_large_one_cluster_capacity_provider`
-- prod ARM: `prod_arm_large_one_cluster_capacity_provider`
+- dev ARM: `dev_arm_one_cluster_capacity_provider`
+- stg ARM: `stg_arm_one_cluster_capacity_provider`
+- prod ARM: `prod_arm_one_cluster_capacity_provider`
 
 ---
 
@@ -96,7 +96,7 @@ Ejemplos:
 | Key | `<project-name>/terraform.tfstate` |
 | Encrypt | `true` |
 
-Ejemplo para dev (como documents-api):
+Ejemplo para dev (como project-name):
 ```
 bucket         = "6fc5w786-dev-terraform-states-bucket"
 encrypt        = true

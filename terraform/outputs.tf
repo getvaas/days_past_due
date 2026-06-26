@@ -72,3 +72,18 @@ output "ecr_repository_uri" {
   value       = module.ecr_dpd.ecr_repository_uri
   description = "URI del repositorio ECR compartido por Lambda y Batch."
 }
+
+output "response_sns_topic_arn" {
+  value       = module.sns_response.sns_topic_arn
+  description = "ARN del topic SNS donde Lambda/Batch publican el resultado del cálculo DPD."
+}
+
+output "response_queue_arn" {
+  value       = module.sqs_response.queue_arn
+  description = "ARN de la cola SQS donde el downstream consume los resultados DPD."
+}
+
+output "response_queue_url" {
+  value       = module.sqs_response.queue_url
+  description = "URL de la cola SQS de respuesta."
+}

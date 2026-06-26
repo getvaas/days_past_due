@@ -1,6 +1,6 @@
 # Patrones de GitHub Actions — Vaas
 
-Basado en el patrón de documents-api y otros proyectos de Vaas.
+Basado en el patrón estándar de los proyectos de Vaas.
 
 ---
 

@@ -41,7 +41,7 @@ provider "aws" {
 # IAM
 # =============================================================================
 module "iam_orchestrator" {
-  source           = "./iam"
+  source           = "git@github.com:getvaas/tf_modules.git//iam"
   iam_orchestrator = local.iam_orchestrator
 }
 
@@ -49,7 +49,7 @@ module "iam_orchestrator" {
 # ECR
 # =============================================================================
 module "ecr_orchestrator" {
-  source           = "./ecr"
+  source           = "git@github.com:getvaas/tf_modules.git//ecr"
   ecr_orchestrator = local.ecr_orchestrator
 }
 
@@ -98,7 +98,7 @@ module "ecs_service" {
 
 | Placeholder | Descripción | Ejemplo |
 |------------|-------------|---------|
-| `{{service_name}}` | Nombre del servicio | `documents-api` |
+| `{{service_name}}` | Nombre del servicio | `project-name` |
 | `{{priority}}` | Prioridad de la regla del ALB (1-50000) | `5000` |
 | `{{path_pattern}}` | Path pattern para el ALB | `/api/documents/v2/*` |
 | `{{secret_name}}` | Nombre del secret | `api_credentials` |

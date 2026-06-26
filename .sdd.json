@@ -4,8 +4,16 @@
     "claude-code"
   ],
   "baseBranch": "develop",
-  "plugins": [],
-  "pluginVersions": {},
+  "plugins": [
+    "@getvaas/infra-skills"
+  ],
+  "pluginVersions": {
+    "@getvaas/infra-skills": {
+      "version": "0.1.2",
+      "type": "skills",
+      "prefix": "vaas.infra."
+    }
+  },
   "paths": {
     "docs": "docs",
     "specs": "specs",
