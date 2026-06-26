@@ -17,29 +17,4 @@ locals {
   # one(...) devuelve null sin error cuando el módulo tiene count = 0.
   inbound_topic_arn = var.inbound_sns_topic_arn != "" ? var.inbound_sns_topic_arn : one(module.sns_inbound[*].sns_topic_arn)
 
-  # ==========================================================================
-  # Secrets
-  # ==========================================================================
-  # Claves esperadas dentro del JSON del secret de Payments.
-  secrets = [
-    "DATASOURCE___PAYMENTS_DB___URL",
-    "DATASOURCE___PAYMENTS_DB___USERNAME",
-    "DATASOURCE___PAYMENTS_DB___PASSWORD",
-  ]
-  auth0_secrets = [
-    "url",
-    "client_id",
-    "client_secret",
-    "vaas_header",
-  ]
-
-  # Valores crudos leídos del secret (mapa clave→valor).
-  secret_values = module.secrets_manager.values
-
-  # Conexión a la base de datos de Payments. Cada valor sale del secret.
-  payments_db = {
-    url      = local.secret_values["DATASOURCE___PAYMENTS_DB___URL"]
-    username = local.secret_values["DATASOURCE___PAYMENTS_DB___USERNAME"]
-    password = local.secret_values["DATASOURCE___PAYMENTS_DB___PASSWORD"]
-  }
 }

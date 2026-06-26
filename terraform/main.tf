@@ -7,14 +7,6 @@ module "cloudwatch" {
   cloudwatch_configuration = local.cloudwatch_configuration
 }
 
-# Secret con las credenciales de la base Payments (se lee, no se crea).
-# Sus valores se usan en locals.payments_db para armar la conexión.
-module "secrets_manager" {
-  source = "./modules/secrets_manager"
-
-  secret_name = var.secret_name
-}
-
 # 1. Topic SNS de entrada. Solo se crea si el Enricher no posee ya uno
 #    (var.inbound_sns_topic_arn vacío).
 module "sns_inbound" {
