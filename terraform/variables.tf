@@ -75,9 +75,9 @@ variable "log_retention_in_days" {
 
 # ─── Secrets ────────────────────────────────────────────────────────────────────
 
-variable "payments_secret_name" {
+variable "secret_name" {
   type        = string
-  description = "Nombre/ARN del secret de Secrets Manager con las credenciales de la base Payments (valor JSON)."
+  description = "Nombre del secret de AWS Secrets Manager del servicio (convencion: env_project_name_snake_case)."
 }
 
 variable "inbound_sns_topic_arn" {

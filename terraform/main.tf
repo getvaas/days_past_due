@@ -12,7 +12,7 @@ module "cloudwatch" {
 module "secrets_manager" {
   source = "./modules/secrets_manager"
 
-  secret_name = var.payments_secret_name
+  secret_name = var.secret_name
 }
 
 # 1. Topic SNS de entrada. Solo se crea si el Enricher no posee ya uno
@@ -93,7 +93,7 @@ module "lambda_dpd" {
   environment_variables = {
     "ENVIRONMENT"            = var.environment
     "AWS_REGION"             = var.aws_region
-    "PAYMENTS_SECRET_NAME"   = var.payments_secret_name
+    "SECRET_NAME"            = var.secret_name
     "SNS_RESPONSE_TOPIC_ARN" = var.sns_response_topic_arn
     "BATCH_ROW_THRESHOLD"    = tostring(var.batch_row_threshold)
     "BATCH_JOB_QUEUE"        = module.batch_dpd.job_queue_arn
@@ -159,7 +159,7 @@ module "batch_dpd" {
   environment_variables = {
     "ENVIRONMENT"            = var.environment
     "AWS_REGION"             = var.aws_region
-    "PAYMENTS_SECRET_NAME"   = var.payments_secret_name
+    "SECRET_NAME"            = var.secret_name
     "SNS_RESPONSE_TOPIC_ARN" = var.sns_response_topic_arn
     "BATCH_ROW_THRESHOLD"    = tostring(var.batch_row_threshold)
   }

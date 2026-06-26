@@ -76,8 +76,8 @@ def test_from_secrets_manager_builds_config():
 
 
 def test_from_secrets_manager_missing_secret_name_raises(monkeypatch):
-    monkeypatch.delenv("PAYMENTS_SECRET_NAME", raising=False)
-    with pytest.raises(RuntimeError, match="PAYMENTS_SECRET_NAME"):
+    monkeypatch.delenv("SECRET_NAME", raising=False)
+    with pytest.raises(RuntimeError, match="SECRET_NAME"):
         DBConfig.from_secrets_manager()
 
 

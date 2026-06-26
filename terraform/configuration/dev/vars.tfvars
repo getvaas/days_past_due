@@ -9,7 +9,7 @@ sns_alarms_topic_arn = "arn:aws:sns:us-east-1:052650215423:dev-elisir-alarms-top
 inbound_sns_topic_arn = ""
 
 # Secret de Secrets Manager con las credenciales de la base Payments (JSON).
-payments_secret_name = "dev/payments/datasource"
+secret_name = "dev_days_past_due"
 
 # ─── Lambda ──────────────────────────────────────────────────────────────────────
 lambda_image_tag   = "latest"

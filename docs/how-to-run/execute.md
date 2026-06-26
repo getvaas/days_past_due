@@ -55,9 +55,8 @@ Company Provider (`company_id = target_id`) → leer payments_db (o generar SPI)
 trazabilidad (`last_update_date`, `payment_tape_ref`) → escribir S3 → publicar SNS.
 Si algún record falla, se relanza `RuntimeError` para que SQS reintente el batch.
 
-Variables requeridas en Lambda: `SNS_RESPONSE_TOPIC_ARN`, `PAYMENTS_SECRET_NAME` (credenciales BD vía Secrets
-Manager), `COMPANY_API` + `AUTH0_*` + `VAAS_SECRET_NAME` (Company Provider / M2M). Ver
-[configuration/environment-variables.md](../configuration/environment-variables.md).
+Variables requeridas en Lambda/Batch: `SNS_RESPONSE_TOPIC_ARN`, `SECRET_NAME` (credenciales BD vía Secrets
+Manager). Ver [configuration/environment-variables.md](../configuration/environment-variables.md).
 
 ## Tests
 

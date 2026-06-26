@@ -4,7 +4,7 @@ DB credentials come from two sources depending on the environment:
 - **Local** (sin AWS_LAMBDA_FUNCTION_NAME): variables de entorno, auto-cargadas
   desde el .env en la raíz del repo.
 - **Lambda** (AWS_LAMBDA_FUNCTION_NAME presente): se leen de un secret en AWS
-  Secrets Manager (nombre/ARN en PAYMENTS_SECRET_NAME).
+  Secrets Manager (nombre/ARN en SECRET_NAME).
 
 `DBConfig.load()` es el resolutor que elige la fuente según el entorno.
 Calculation parameters come from the CLI and are passed around as a dataclass.
@@ -146,12 +146,12 @@ class DBConfig:
     def from_secrets_manager(cls, secret_name: str | None = None) -> "DBConfig":
         """Construye la config leyendo el secret de Payments en Secrets Manager.
 
-        secret_name: nombre/ARN del secret. Si es None, se toma de PAYMENTS_SECRET_NAME.
+        secret_name: nombre/ARN del secret. Si es None, se toma de SECRET_NAME.
         """
-        name = secret_name or os.environ.get("PAYMENTS_SECRET_NAME")
+        name = secret_name or os.environ.get("SECRET_NAME")
         if not name:
             raise RuntimeError(
-                "Falta PAYMENTS_SECRET_NAME: no se puede leer el secret de la base "
+                "Falta SECRET_NAME: no se puede leer el secret de la base "
                 "en Secrets Manager."
             )
 

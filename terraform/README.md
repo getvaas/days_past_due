@@ -51,7 +51,7 @@ terraform apply -var-file=configuration/global.tfvars -var-file=configuration/de
 
 | Variable | Default | Nota |
 |----------|---------|------|
-| `payments_secret_name` | (dev tfvars) | Nombre/ARN del secret JSON de Payments en Secrets Manager. **Confirmar el real.** |
+| `secret_name` | (dev tfvars) | Nombre del secret en AWS Secrets Manager (convención: `{env}_days_past_due`). |
 | `inbound_sns_topic_arn` | `""` | Vacío = se crea el topic acá. Si el Enricher ya lo posee, poné su ARN (FIFO) y no se crea uno nuevo. |
 | `lambda_function_name` | `""` | Vacío = no se crea el trigger (la Lambda aún no existe). Setealo y re-aplicá cuando exista. |
 | `sns_alarms_topic_arn` | (dev tfvars) | Vacío = sin alarmas CloudWatch. |
