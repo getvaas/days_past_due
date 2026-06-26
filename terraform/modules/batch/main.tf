@@ -1,6 +1,6 @@
 # Compute environment FARGATE — sin instancias EC2 que gestionar.
 resource "aws_batch_compute_environment" "this" {
-  compute_environment_name = "${var.name}-compute-env"
+  name = "${var.name}-compute-env"
   type                     = "MANAGED"
   state                    = "ENABLED"
 
