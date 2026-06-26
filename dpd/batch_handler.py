@@ -1,8 +1,10 @@
 """Entry point para el job de AWS Batch — Payments Expand.
 
-Ejecuta el mismo flujo que lambda_handler._process_message pero iniciado
-desde un job de Batch, no desde un trigger SQS. El payload del evento se
-recibe por variable de entorno DPD_BATCH_PAYLOAD o por argumento --payload.
+Ejecuta el mismo procesamiento que la Lambda (vía dpd.processor) pero iniciado
+desde un job de Batch, no desde un trigger SQS. A diferencia de la Lambda, NO
+re-evalúa el umbral de derivación a Batch — procesa siempre inline, por lo que
+nunca vuelve a encolar otro job (evita el bucle infinito de jobs). El payload del
+evento se recibe por variable de entorno DPD_BATCH_PAYLOAD o por argumento --payload.
 
 Uso:
     python -m dpd.batch_handler --payload '{"origin": "ENRICHER", ...}'
@@ -24,7 +26,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 from .models import InboundMessage
-from .lambda_handler import _process_message, _validate
+from .processor import process_message, _validate
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         _validate(msg)
-        _process_message(msg)
+        process_message(msg)
     except Exception as exc:
         log.exception("[ERROR] batch_handler | job_id=%s — %s", msg.job_id, exc)
         return 1
