@@ -48,4 +48,4 @@ resultado_*.xlsx
 # Notebooks de análisis ad-hoc
 analisis_*.ipynb
 
-/terraform/*
+/deploy/terraform/.terraform

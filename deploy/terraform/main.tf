@@ -24,7 +24,7 @@ module "sqs" {
 }
 
 module "sqs_invoke" {
-  source = "./modules/sqs_event_invoke_lambda"
+  source = "modules/sqs_event_invoke_lambda"
   lambda_function_name               = module.lambda_container.lambda_function_name
   sqs_queue_arn                      = module.sqs.queue_arn
 }
