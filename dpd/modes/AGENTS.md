@@ -14,8 +14,7 @@ y calcula `{id, dpd_current, amount_in_arrears}`.
 ## Reglas locales
 
 - **Toda la lógica vive en `compute_from_data(installments, payments, cfg)`** (función pura testeable).
-  `compute(conn, cfg)` solo lee SQL y delega — no dupliques cálculo.
-- El `import` de `integrations.db` es **local dentro de `compute()`**, no a nivel de módulo.
-- Aritmética con `Decimal` (`_to_dec` / `_zero_to_dec`): tratar NaN y None como 0.
+  La lectura de BD vive en `db_reader` (loaders); los modos NO leen la BD.
+- Aritmética con `Decimal`: usar `to_decimal` de [../utils/decimals.py](../utils/decimals.py) (trata NaN y None como 0).
 - Orden de buckets en cascade: `guarantee → principal → interest → moratory_interest → tax → fee`.
 - Salida: iterador de dicts `{"id", "dpd_current", "amount_in_arrears"}`.

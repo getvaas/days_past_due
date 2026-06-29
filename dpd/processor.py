@@ -24,20 +24,27 @@ from datetime import date, datetime, timezone
 
 import polars as pl
 
-from .db_reader import read_last_dates
-from .excel_runner import load_payment_tape, load_schedule
+from .db_reader import load_payment_tape, load_schedule, read_last_dates
 from .models import InboundMessage, OutboundMessage
 from .products import dpd as product_dpd
 from .products import total_amount as product_total_amount
 from .products import vpn as product_vpn
 from .utils.s3 import read_loan_tape, write_loan_tape
 from .sns_publisher import publish_response
-from .spi_builder import LoanTapeColumns, build_and_persist
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
 SUPPORTED_PRODUCTS = {"dpd", "total_amount", "vpn"}
+
+# Columnas base que devuelve product_dpd.compute. Cuando no se pide un modo
+# concreto se calculan ambos y se sufijan con el nombre del modo.
+_DPD_COLS = ("dpd_current", "amount_in_arrears")
+
+
+def _dpd_rename(mode: str) -> dict:
+    """Mapping para sufijar las columnas DPD con el modo (p.ej. dpd_current_cascade)."""
+    return {c: f"{c}_{mode}" for c in _DPD_COLS}
 
 
 def _validate(msg: InboundMessage) -> None:
@@ -70,15 +77,17 @@ def process_loan_tape(msg: InboundMessage, loan_tape: pl.DataFrame) -> None:
         msg.job_id, msg.metadata.products, msg.target_id, msg.key, msg.rate_type,
     )
 
-    # 1. Leer datos de payments_db. Los loaders devuelven pandas → convertir a polars.
+    # 1. Leer datos de payments_db. Los loaders devuelven polars DataFrames.
     company_id = msg.target_id
 
-    spi_df = pl.from_pandas(load_schedule(company_id))
-    payments_df = pl.from_pandas(load_payment_tape(company_id))
+    spi_df = load_schedule(company_id)
+    payments_df = load_payment_tape(company_id)
     log.info("DB: %d cuotas | %d pagos", len(spi_df), len(payments_df))
 
     ##TODO Falta respues de VPN
     """
+    from .spi_builder import LoanTapeColumns, build_and_persist
+
     if spi_df.is_empty():
         if msg.rate_type == "variable":
             # Tasa variable: no se puede generar el SPI automáticamente.
@@ -111,25 +120,21 @@ def process_loan_tape(msg: InboundMessage, loan_tape: pl.DataFrame) -> None:
     enrichments: list[pl.DataFrame] = []
 
     if "dpd" in msg.metadata.products:
+        def _dpd(mode: str) -> pl.DataFrame:
+            return product_dpd.compute(
+                loan_tape=loan_tape, spi_df=spi_df, payments_df=payments_df,
+                key=msg.key, calc_date=calc_date,
+                paid_threshold=msg.metadata.paid_threshold, mode=mode,
+            )
+
         if msg.mode is None:
-            cascade = product_dpd.compute(
-                loan_tape=loan_tape, spi_df=spi_df, payments_df=payments_df,
-                key=msg.key, calc_date=calc_date, paid_threshold=msg.metadata.paid_threshold,
-                mode="cascade",
-            ).rename({"dpd_current": "dpd_current_cascade", "amount_in_arrears": "amount_in_arrears_cascade"})
-            join = product_dpd.compute(
-                loan_tape=loan_tape, spi_df=spi_df, payments_df=payments_df,
-                key=msg.key, calc_date=calc_date, paid_threshold=msg.metadata.paid_threshold,
-                mode="join",
-            ).rename({"dpd_current": "dpd_current_join", "amount_in_arrears": "amount_in_arrears_join"})
+            # Sin modo explícito → calcular ambos y sufijar las columnas por modo.
+            cascade = _dpd("cascade").rename(_dpd_rename("cascade"))
+            join = _dpd("join").rename(_dpd_rename("join"))
             enrichments.append(cascade.join(join, on=msg.key, how="left"))
             log.info("DPD calculado (cascade + join)")
         else:
-            enrichments.append(product_dpd.compute(
-                loan_tape=loan_tape, spi_df=spi_df, payments_df=payments_df,
-                key=msg.key, calc_date=calc_date, paid_threshold=msg.metadata.paid_threshold,
-                mode=msg.mode,
-            ))
+            enrichments.append(_dpd(msg.mode))
             log.info("DPD calculado (mode=%s)", msg.mode)
 
     if "total_amount" in msg.metadata.products:

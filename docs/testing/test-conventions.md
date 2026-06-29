@@ -52,12 +52,12 @@ def test_cascade_pago_unico_cubre_dos_cuotas():
   no se mutó el DataFrame de entrada.
 - Reutilizar los fixtures del seed: los escenarios `C001`–`C005` ya tienen resultados esperados documentados en
   [tests/seed.sql](../../tests/seed.sql).
-- Mocks de IO: parchear `boto3.client` para `s3_io`/`sns_publisher`; parchear `integrations.db.connect` para
-  cubrir `db_reader`/`spi_builder` sin MySQL.
+- Mocks de IO: parchear `boto3.client` para `utils/s3`/`sns_publisher`; parchear `db_reader.connection` (o
+  `integrations.db.connect`) para cubrir `db_reader`/`spi_builder` sin MySQL.
 
 ## Fixtures compartidos
 
-- `tests/Days Past Due.xlsx` — entrada real para `excel_runner`.
+- `tests/Days Past Due.xlsx` — dataset de ejemplo (legacy; ya no lo consume código del paquete).
 - `tests/seed.sql` — escenarios con resultados esperados (días de mora calculados para `calc_date=2026-05-04`).
 
 Cómo ejecutar: [run-tests.md](run-tests.md).

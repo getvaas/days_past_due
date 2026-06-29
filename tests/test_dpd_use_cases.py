@@ -52,7 +52,7 @@ AMOUNT = Decimal("1000.00")
 # ─── Builders de fixtures ────────────────────────────────────────────────────
 
 def inst(cid: str, iid: int, due: date, ref: str, gross: Decimal = AMOUNT) -> dict:
-    """Cuota mínima compatible con _installments_from_df (bypass sanitize_schedule)."""
+    """Cuota mínima compatible con _installments_from_pl (sin pasar por los loaders)."""
     return {
         "id": iid,
         "borrower_contract_id": cid,

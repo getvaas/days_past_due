@@ -1,10 +1,11 @@
 # AGENTS.md — dpd/integrations/
 
-Acceso a **MySQL** y runner **MySQL→Excel (solo lectura)**.
+Acceso a **MySQL** (wrapper de bajo nivel para PyMySQL).
 
-- `db.py` — wrapper fino de PyMySQL (`connect`, `cursor`). SQL crudo, sin ORM.
-- `queries.py` — summary queries por contrato (`current_dpd_by_contract`, `max_dpd_by_contract`).
-- `db_excel_runner.py` — entry point: lee MySQL (solo lectura) y exporta DPD a Excel. Reusa `excel_runner.compute_dpd`.
+- `db.py` — wrapper fino de PyMySQL: `connect`, `cursor`, y `connection` (conexión + cursor de solo lectura, cierra ambos). SQL crudo, sin ORM.
+
+La lectura de las tablas de cálculo (`scheduled_payments_installments` / `payment_tape`) vive en
+[../db_reader.py](../db_reader.py) (loaders que devuelven polars), no acá.
 
 ## Antes de editar, leé
 
@@ -14,8 +15,6 @@ Acceso a **MySQL** y runner **MySQL→Excel (solo lectura)**.
 ## Reglas locales
 
 - **SQL crudo, sin ORM.** Queries como constantes de módulo en MAYÚSCULAS, parámetros nombrados `%(x)s`.
-- El SQL de negocio vive **junto a su consumidor**, no en `db.py`.
-- Conexión: `connect()` con `autocommit=False`; cerrar en `finally`. Este paquete es **solo lectura** (los INSERT
-  viven en `dpd/spi_builder.py`, fuera de acá).
-- `db_excel_runner` filtra: `company_id` (numérico) en `payment_tape`, `company_code` (string) en installments.
-  Hace `SELECT *` y deja que el sanitizador de `excel_runner` tome las columnas necesarias (portable a prod).
+- El SQL de negocio vive **junto a su consumidor** (p.ej. en `db_reader`), no en `db.py`.
+- Lectura: usar el context manager `connection(cfg)` (abre y cierra conexión + cursor). Para escritura con
+  commit/rollback usar `connect()` + `cursor()` directo (los INSERT viven en `dpd/spi_builder.py`, fuera de acá).

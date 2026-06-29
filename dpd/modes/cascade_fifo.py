@@ -9,10 +9,9 @@ Orden de aplicación dentro de cada cuota:
 moratory_interest no existe del lado scheduled, así que ese bucket es 0 en el
 componente de la cuota; sigue presente en el orden por consistencia con el spec.
 
-Dos puntos de entrada:
-- `compute(conn, cfg)`: trae los datos via SQL.
-- `compute_from_data(installments, payments, cfg)`: misma lógica pura sobre listas
-  de dicts. Usado por tests/notebook para no depender de MySQL.
+Entry point: `compute_from_data(installments, payments, cfg)` — lógica pura sobre
+listas de dicts, sin dependencia de MySQL. Los datos se cargan en la capa de
+productos/loaders y se pasan ya como dicts.
 """
 from __future__ import annotations
 
@@ -23,35 +22,9 @@ from decimal import Decimal
 from typing import Iterable, Iterator
 
 from ..config import RunConfig
+from ..utils.decimals import to_decimal as _zero_to_dec
 
 log = logging.getLogger(__name__)
-
-SCHEDULE_SQL = """
-SELECT
-    id,
-    borrower_contract_id,
-    `date`            AS installment_date,
-    gross_amount,
-    guarantee_amount,
-    principal_amount,
-    interest_amount,
-    tax_amount,
-    fee_amount
-FROM scheduled_payments_installments
-WHERE company_id = %(company_id)s
-ORDER BY borrower_contract_id, `date` ASC, id ASC;
-"""
-
-PAYMENT_TAPE_SQL = """
-SELECT
-    borrower_contract_id,
-    payment_date,
-    total_payment
-FROM payment_tape
-WHERE company_id = %(company_id)s
-  AND payment_date IS NOT NULL
-ORDER BY borrower_contract_id, payment_date ASC, id ASC;
-"""
 
 # Buckets in spec order. moratory_interest is unknown on the schedule side → 0.
 BUCKETS = (
@@ -62,16 +35,6 @@ BUCKETS = (
     "tax_amount",
     "fee_amount",
 )
-
-
-def _zero_to_dec(v) -> Decimal:
-    if v is None:
-        return Decimal(0)
-    # pandas representa celdas vacías como float('nan'); tratarlas como 0.
-    if isinstance(v, float) and v != v:
-        return Decimal(0)
-    # str() para evitar imprecisión cuando el dato viene de pandas/Excel como float.
-    return Decimal(str(v))
 
 
 def _apply_pool_to_installment(pool: Decimal, components: dict) -> tuple:
@@ -172,20 +135,3 @@ def compute_from_data(
                 "dpd_current": dpd_current,
                 "amount_in_arrears": arrears,
             }
-
-
-def compute(conn, cfg: RunConfig) -> Iterator[dict]:
-    """Yield {id, dpd_current, amount_in_arrears} por cuota — desde la BD."""
-    from ..integrations.db import cursor
-    with cursor(conn) as cur:
-        cur.execute(SCHEDULE_SQL, {"company_id": cfg.company_id})
-        installments = cur.fetchall()
-        cur.execute(PAYMENT_TAPE_SQL, {"company_id": cfg.company_id})
-        payments = cur.fetchall()
-
-    log.info(
-        "cascade mode: fetched %d installments / %d payments for company_id=%s",
-        len(installments), len(payments), cfg.company_id,
-    )
-
-    yield from compute_from_data(installments, payments, cfg)

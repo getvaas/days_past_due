@@ -44,9 +44,9 @@ Convenciones de Python que sigue todo el paquete `dpd/`. Basadas en el código e
 
 ## Mensajes al usuario / logging
 
-- **CLI** (`excel_runner`, `db_excel_runner`): `print()` con prefijo `⚠` para warnings. Resumen al final.
-- **Lambda / librería** (`lambda_handler`, `db_reader`, `modes/`): `logging` (`log = logging.getLogger(__name__)`).
-  No mezclar `print()` en código de Lambda.
+- **CLI local** (`local_runner`): `print()` con prefijo `⚠` para warnings. Resumen al final.
+- **Lambda / Batch / librería** (`lambda_handler`, `batch_handler`, `processor`, `db_reader`, `modes/`): `logging`
+  (`log = logging.getLogger(__name__)`). No mezclar `print()` en código de Lambda/Batch.
 
 ## Do / Don't
 

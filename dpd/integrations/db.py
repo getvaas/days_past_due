@@ -30,3 +30,17 @@ def cursor(conn, dict_rows: bool = True) -> Iterator[pymysql.cursors.Cursor]:
         yield cur
     finally:
         cur.close()
+
+
+@contextmanager
+def connection(cfg: DBConfig, dict_rows: bool = True) -> Iterator[pymysql.cursors.Cursor]:
+    """Abre conexión + cursor de solo lectura y cierra ambos al salir.
+
+    Para el camino de escritura (commit/rollback) usar connect()/cursor() directo.
+    """
+    conn = connect(cfg)
+    try:
+        with cursor(conn, dict_rows) as cur:
+            yield cur
+    finally:
+        conn.close()

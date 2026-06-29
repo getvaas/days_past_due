@@ -3,10 +3,8 @@ directo. Todo mockeado — sin BD, AWS ni red.
 """
 from __future__ import annotations
 
-import datetime as dt
 from unittest.mock import patch
 
-import pandas as pd
 import polars as pl
 
 from dpd.models import InboundMessage, MessageMetadata
@@ -24,8 +22,8 @@ def test_process_message_loads_from_db_with_company_id():
     from dpd import lambda_handler, processor
 
     loan_tape = pl.DataFrame({"contract_id": ["C1"]})
-    spi = pd.DataFrame({"borrower_contract_id": ["C1"], "id": [1]})
-    pays = pd.DataFrame(columns=["borrower_contract_id", "payment_date", "total_payment"])
+    spi = pl.DataFrame({"borrower_contract_id": ["C1"], "id": [1]})
+    pays = pl.DataFrame(schema=["borrower_contract_id", "payment_date", "total_payment"])
     last = {"last_payment_tape_date": None, "last_schedule_payment_date": None, "last_payment_date": None}
 
     with patch.object(lambda_handler, "read_loan_tape", return_value=loan_tape), \
@@ -61,8 +59,8 @@ def test_lambda_under_threshold_processes_inline():
 
     rows = [{"contract_id": f"C{i}"} for i in range(3)]
     loan_tape = pl.DataFrame(rows)
-    spi = pd.DataFrame({"borrower_contract_id": ["C0"], "id": [1]})
-    pays = pd.DataFrame(columns=["borrower_contract_id", "payment_date", "total_payment"])
+    spi = pl.DataFrame({"borrower_contract_id": ["C0"], "id": [1]})
+    pays = pl.DataFrame(schema=["borrower_contract_id", "payment_date", "total_payment"])
     last = {"last_payment_tape_date": None, "last_schedule_payment_date": None, "last_payment_date": None}
 
     with patch.object(lambda_handler, "read_loan_tape", return_value=loan_tape), \
@@ -133,8 +131,8 @@ def test_batch_does_not_resubmit_when_over_threshold():
 
     rows = [{"contract_id": f"C{i}"} for i in range(10)]
     loan_tape = pl.DataFrame(rows)
-    spi = pd.DataFrame({"borrower_contract_id": ["C0"], "id": [1]})
-    pays = pd.DataFrame(columns=["borrower_contract_id", "payment_date", "total_payment"])
+    spi = pl.DataFrame({"borrower_contract_id": ["C0"], "id": [1]})
+    pays = pl.DataFrame(schema=["borrower_contract_id", "payment_date", "total_payment"])
     last = {"last_payment_tape_date": None, "last_schedule_payment_date": None, "last_payment_date": None}
 
     payload = {

@@ -11,8 +11,8 @@ Toda la configuración sensible se pasa por variables de entorno.
 - **Lambda** (`AWS_LAMBDA_FUNCTION_NAME` presente, lo inyecta AWS): `DBConfig.from_secrets_manager()` → lee el
   secret indicado por `SECRET_NAME` desde AWS Secrets Manager y parsea su URL.
 
-Los callers del flujo Lambda (`db_reader.py`, `spi_builder.py`) usan `DBConfig.load()`.
-`integrations/db_excel_runner.py` es CLI solo local y sigue usando `from_env()`.
+Los callers del flujo (`db_reader.py`, `spi_builder.py`) usan `DBConfig.load()`, que despacha entre
+`from_env()` (local) y `from_secrets_manager()` (Lambda/Batch) según el entorno.
 
 ## Base de datos (MySQL) — solo local (`.env`)
 
@@ -23,8 +23,6 @@ Los callers del flujo Lambda (`db_reader.py`, `spi_builder.py`) usan `DBConfig.l
 | `DB_HOST` | No | `localhost` | Host MySQL. |
 | `DB_PORT` | No | `3306` | Puerto MySQL. |
 | `DB_PASSWORD` | No | `""` | Password MySQL. |
-
-`DEFAULT_DBNAME = "payments_db"` en `db_excel_runner.py` se usa solo si no hay `DB_NAME` ni `--dbname`.
 
 ## Base de datos (MySQL) — Lambda (Secrets Manager)
 

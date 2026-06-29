@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
+from .utils.dates import to_date as _to_date
+
 
 @dataclass
 class MessageMetadata:
@@ -19,13 +21,6 @@ class MessageMetadata:
 
     @classmethod
     def from_dict(cls, d: dict) -> "MessageMetadata":
-        def _to_date(v) -> Optional[date]:
-            if v is None:
-                return None
-            if isinstance(v, date):
-                return v
-            return date.fromisoformat(str(v))
-
         return cls(
             products=d.get("products", []),
             interest_rate=d.get("interest_rate"),
