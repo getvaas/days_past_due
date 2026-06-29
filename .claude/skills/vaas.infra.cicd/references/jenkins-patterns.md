@@ -1,12 +1,97 @@
 # Patrones de Jenkinsfile — Vaas
 
-Basado en el patrón de documents-api y otros proyectos de Vaas.
+Vaas tiene dos patrones de Jenkinsfile según el stack:
+
+- **Java/Gradle** → invocación a la shared library `vaas-shared` (`ciPipeline` + `cdPipeline`).
+- **Node.js / Python** → declarative pipeline completo (patrón legacy, hasta que `vaas-shared` cubra esos stacks).
 
 ---
 
-## Estructura del Jenkinsfile
+## Java/Gradle vía `vaas-shared`
 
-El Jenkinsfile de Vaas sigue un flujo estándar de 6 etapas:
+Dos archivos en la raíz del repo:
+
+- `Jenkinsfile` — invoca `ciPipeline(...)`. Corre tests, construye la imagen y dispara el job de CD.
+- `Jenkinsfile-CD` — invoca `cdPipeline(...)`. Aplica Terraform y actualiza el ECS service/task definition.
+
+Ambos arrancan con `@Library('vaas-shared') _` para importar la shared library.
+
+### `ciPipeline`
+
+```groovy
+@Library('vaas-shared') _
+
+ciPipeline(
+        project: '<kebab-name>',
+        slackChannel: '<channel>',
+        nextCdJob: 'CD-<Train-Case>',
+        terraformFolder: 'terraform',
+        terraformConfigBaseFolder: 'config',
+        testDockerfile: 'DockerfileTest',
+        testCommand: 'clean test',
+        testOutputPath: '/home/app/build/reports/tests/test/index.html',
+        testOutputFile: './tests.html'
+)
+```
+
+| Parámetro | Para qué sirve |
+|-----------|----------------|
+| `project` | Nombre kebab-case del servicio. La shared lib lo usa como base para el repository name y el tag de la imagen. |
+| `slackChannel` | Canal donde notifica inicio y resultado del CI. |
+| `nextCdJob` | Job de CD a disparar al terminar exitosamente. Convención Vaas: `CD-<Train-Case>`, cada palabra capitalizada separada por `-` (ej: `CD-Project-Name`). |
+| `terraformFolder` | Ruta a la carpeta de Terraform del proyecto, relativa al repo. |
+| `terraformConfigBaseFolder` | Carpeta base de configuración Terraform (subcarpetas `dev/`, `stg/`, `prod/`). |
+| `testDockerfile` | Dockerfile que corre los tests (típicamente `DockerfileTest`). |
+| `testCommand` | Comando Gradle a invocar dentro del contenedor. Para tests unitarios: `clean test`. |
+| `testOutputPath` | Path absoluto al reporte HTML de tests dentro del contenedor. |
+| `testOutputFile` | Path relativo donde la shared lib publica el reporte fuera del contenedor (para archivar en Jenkins). |
+
+### `cdPipeline`
+
+```groovy
+@Library('vaas-shared') _
+
+cdPipeline(
+        project: '<kebab-name>',
+        slackChannel: '<channel>',
+        ecsServiceName: '<kebab-name>',
+        taskDefinitionName: '<kebab-name>',
+        ecrRepositoryName: '<kebab-name>-repository',
+        s3BucketPath: '<kebab-name>',
+        terraformFolder: 'deploy/terraform',
+        terraformConfigBaseFolder: 'config'
+)
+```
+
+| Parámetro | Para qué sirve |
+|-----------|----------------|
+| `project` | Nombre kebab-case del servicio. |
+| `slackChannel` | Canal donde notifica el resultado del deploy. |
+| `ecsServiceName` | Nombre del ECS service. Por convención coincide con `project`. |
+| `taskDefinitionName` | Nombre del task definition en ECS. Por convención coincide con `project`. |
+| `ecrRepositoryName` | Nombre del repo ECR. Convención: `<project>-repository`. |
+| `s3BucketPath` | Path en S3 para artefactos auxiliares (assets, dumps, etc). |
+| `terraformFolder` | Ruta a la carpeta de Terraform de deploy. |
+| `terraformConfigBaseFolder` | Carpeta base de configuración Terraform. |
+
+### Lo que aporta la shared library
+
+La shared library encapsula:
+
+- Selección de cuenta AWS (dev/stg/prod) y de las credenciales Jenkins (`jenkins-aws-development`, `jenkins-aws-production-core`).
+- Cálculo del `REPOSITORY_URL` por ambiente.
+- Stages de build, docker build, push a ECR, actualización del task definition.
+- Notificaciones Slack al inicio y al final.
+- `buildDescription` con ambiente y branch.
+- Archivo de reportes de tests.
+
+El detalle de cómo lo hace vive en el repo `vaas-shared`; este documento describe únicamente la interfaz que consume la skill.
+
+---
+
+## Patrón legacy (Node.js / Python — declarative)
+
+Mientras la shared library no cubra estos stacks, los proyectos siguen usando el Jenkinsfile declarativo completo. Estructura:
 
 ```groovy
 // Variables de configuración
@@ -30,9 +115,9 @@ if (params.Environment == "prod") {
 }
 ```
 
-## Stages
+### Stages
 
-### 1. Initialization
+#### 1. Initialization
 ```groovy
 stage("Initialization") {
     steps {
@@ -41,7 +126,7 @@ stage("Initialization") {
 }
 ```
 
-### 2. Slack Notification (inicio)
+#### 2. Slack Notification (inicio)
 ```groovy
 stage("NotificateAction") {
     steps {
@@ -54,19 +139,7 @@ stage("NotificateAction") {
 }
 ```
 
-### 3. Build — por tipo de proyecto
-
-**Java/Gradle**:
-```groovy
-stage("CreateArtifact") {
-    steps {
-        script {
-            sh "./gradlew clean"
-            sh "./gradlew bootJar"
-        }
-    }
-}
-```
+#### 3. Build por stack
 
 **Node.js**:
 ```groovy
@@ -80,7 +153,19 @@ stage("CreateArtifact") {
 }
 ```
 
-### 4. Docker Build
+**Python**:
+```groovy
+stage("CreateArtifact") {
+    steps {
+        script {
+            sh "pip install -r requirements.txt"
+            sh "python setup.py bdist_wheel"
+        }
+    }
+}
+```
+
+#### 4. Docker Build
 ```groovy
 stage("BuildImage") {
     steps {
@@ -92,12 +177,7 @@ stage("BuildImage") {
 }
 ```
 
-**Con build args** (e.g., APM agent para Java):
-```groovy
-sh "docker build -t ${params.Environment}-${REPOSITORY_NAME} --build-arg URL_APM_JAR=https://repo1.maven.org/maven2/co/elastic/apm/elastic-apm-agent/1.34.1/elastic-apm-agent-1.34.1.jar ."
-```
-
-### 5. Push a ECR
+#### 5. Push a ECR
 ```groovy
 stage("UploadToEcr") {
     steps {
@@ -111,7 +191,7 @@ stage("UploadToEcr") {
 }
 ```
 
-### 6. Update Task Definition
+#### 6. Update Task Definition
 ```groovy
 stage("CreateTaskDefinition") {
     steps {
@@ -126,7 +206,7 @@ stage("CreateTaskDefinition") {
 }
 ```
 
-### Post — Slack Notification (fin)
+#### Post — Slack Notification (fin)
 ```groovy
 post {
     always {
@@ -141,11 +221,12 @@ post {
 
 ---
 
-## Convenciones
+## Convenciones (ambos patrones)
 
-- El Jenkins job recibe `params.Environment` (dev/stg/prod) y `params.Branch`
-- Las imágenes se tagean con `v${BUILD_ID}` (incrementa con cada build)
-- El ECR repo sigue el patrón: `<env>-<service-name>-repository`
-- El task definition sigue el patrón: `<env>-<service-name>`
-- El script `create_new_task_definition.py` está en `~/vaas-jenkins-scripts/` en el Jenkins server
-- Las credenciales de AWS están configuradas en Jenkins como "jenkins-aws-development" y "jenkins-aws-production-core"
+- El Jenkins job recibe `params.Environment` (dev/stg/prod) y `params.Branch`.
+- Las imágenes se tagean con `v${BUILD_ID}` (incrementa con cada build).
+- El ECR repo sigue el patrón: `<env>-<service-name>-repository`.
+- El task definition sigue el patrón: `<env>-<service-name>`.
+- El script `create_new_task_definition.py` está en `~/vaas-jenkins-scripts/` en el Jenkins server (lo usa la shared lib internamente para Java/Gradle y aparece explícito en el patrón legacy).
+- Las credenciales AWS están configuradas en Jenkins como `jenkins-aws-development` y `jenkins-aws-production-core`.
+- El job de CD se llama `CD-<Train-Case>`, cada palabra capitalizada separada por `-` (ej: `CD-Project-Name`).

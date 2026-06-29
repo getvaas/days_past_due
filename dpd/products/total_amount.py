@@ -1,49 +1,39 @@
 """Product: Total Amount.
 
-Agrega al loan tape la suma total de pagos recibidos por contrato.
-Columna que añade:
+Columna que devuelve:
     total_amount_paid — suma de todos los pagos en payment_tape para el contrato
 """
 from __future__ import annotations
 
-import pandas as pd
+import polars as pl
 
 
 def compute(
-    loan_tape: pd.DataFrame,
-    payments_df: pd.DataFrame,
+    loan_tape: pl.DataFrame,
+    payments_df: pl.DataFrame,
     key: str,
-) -> pd.DataFrame:
-    """Suma total_payment por contrato y lo agrega al loan tape.
+) -> pl.DataFrame:
+    """Suma total_payment por contrato.
 
-    Args:
-        loan_tape:    DataFrame con una fila por contrato.
-        payments_df:  DataFrame de payment_tape con columnas
-                      borrower_contract_id y total_payment.
-        key:          Columna en loan_tape que identifica el contrato
-                      (debe coincidir con borrower_contract_id en payments).
-
-    Returns:
-        loan_tape con columna `total_amount_paid` agregada.
+    Devuelve un DataFrame con solo (key, total_amount_paid) —
+    sin copiar el loan_tape. El join al loan_tape lo hace el caller.
     """
-    if payments_df.empty:
-        out = loan_tape.copy()
-        out["total_amount_paid"] = 0.0
-        return out
+    contracts = loan_tape.select(pl.col(key))
 
-    pay = payments_df.copy()
-    pay["total_payment"] = pd.to_numeric(pay["total_payment"], errors="coerce").fillna(0)
-
-    # Filtrar pagos válidos
-    pay = pay[pay["total_payment"] > 0]
+    if payments_df.is_empty():
+        return contracts.with_columns(pl.lit(0.0).alias("total_amount_paid"))
 
     total_by_contract = (
-        pay.groupby("borrower_contract_id", as_index=False)
-           .agg(total_amount_paid=("total_payment", "sum"))
-           .rename(columns={"borrower_contract_id": key})
+        payments_df
+        .with_columns(pl.col("total_payment").cast(pl.Float64, strict=False))
+        .filter(pl.col("total_payment") > 0)
+        .group_by("borrower_contract_id")
+        .agg(pl.col("total_payment").sum().alias("total_amount_paid"))
+        .rename({"borrower_contract_id": key})
     )
 
-    out = loan_tape.copy()
-    out = out.merge(total_by_contract, on=key, how="left")
-    out["total_amount_paid"] = out["total_amount_paid"].fillna(0.0)
-    return out
+    return (
+        contracts
+        .join(total_by_contract, on=key, how="left")
+        .with_columns(pl.col("total_amount_paid").fill_null(0.0))
+    )

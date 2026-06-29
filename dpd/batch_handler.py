@@ -1,8 +1,10 @@
 """Entry point para el job de AWS Batch — Payments Expand.
 
-Ejecuta el mismo flujo que lambda_handler._process_message pero iniciado
-desde un job de Batch, no desde un trigger SQS. El payload del evento se
-recibe por variable de entorno DPD_BATCH_PAYLOAD o por argumento --payload.
+Ejecuta el mismo procesamiento que la Lambda (vía dpd.processor) pero iniciado
+desde un job de Batch, no desde un trigger SQS. A diferencia de la Lambda, NO
+re-evalúa el umbral de derivación a Batch — procesa siempre inline, por lo que
+nunca vuelve a encolar otro job (evita el bucle infinito de jobs). El payload del
+evento se recibe por variable de entorno DPD_BATCH_PAYLOAD o por argumento --payload.
 
 Uso:
     python -m dpd.batch_handler --payload '{"origin": "ENRICHER", ...}'
@@ -24,7 +26,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 from .models import InboundMessage
-from .lambda_handler import _process_message, _validate
+from .processor import process_message, _validate
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,27 +41,51 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = p.parse_args(argv if argv is not None else sys.argv[1:])
 
+    payload_source = "--payload arg" if args.payload else "DPD_BATCH_PAYLOAD env"
     raw = args.payload or os.environ.get("DPD_BATCH_PAYLOAD")
+
+    log.info(
+        "[START] batch_handler | env=%s | region=%s | queue=%s | job_definition=%s",
+        os.environ.get("ENVIRONMENT", "unknown"),
+        os.environ.get("AWS_REGION", "unknown"),
+        os.environ.get("BATCH_JOB_QUEUE", "unknown"),
+        os.environ.get("BATCH_JOB_DEFINITION", "unknown"),
+    )
+
     if not raw:
-        print(
-            "Error: se requiere --payload o la variable de entorno DPD_BATCH_PAYLOAD.",
-            file=sys.stderr,
-        )
+        log.error("[ERROR] batch_handler | payload no recibido — se requiere --payload o DPD_BATCH_PAYLOAD")
         return 1
+
+    log.info("batch_handler | payload_source=%s | payload_size=%d bytes", payload_source, len(raw))
 
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        print(f"Error: payload JSON inválido — {exc}", file=sys.stderr)
+        log.error("[ERROR] batch_handler | payload JSON inválido — %s", exc)
         return 1
 
     record = {"body": json.dumps(payload)}
-    msg = InboundMessage.from_sqs_record(record)
-    log.info("Batch handler iniciado | job_id=%s | company_id=%s", msg.job_id, msg.target_id)
 
-    _validate(msg)
-    _process_message(msg)
-    log.info("Batch handler finalizado correctamente.")
+    try:
+        msg = InboundMessage.from_sqs_record(record)
+    except Exception as exc:
+        log.error("[ERROR] batch_handler | no se pudo parsear el mensaje — %s", exc)
+        return 1
+
+    log.info(
+        "batch_handler | job_id=%s | company=%s | products=%s | input=%s | output=%s | rate_type=%s",
+        msg.job_id, msg.target_id, msg.metadata.products,
+        msg.input_file, msg.output_file, msg.rate_type,
+    )
+
+    try:
+        _validate(msg)
+        process_message(msg)
+    except Exception as exc:
+        log.exception("[ERROR] batch_handler | job_id=%s — %s", msg.job_id, exc)
+        return 1
+
+    log.info("[END] batch_handler | job_id=%s | status=ok", msg.job_id)
     return 0
 
 

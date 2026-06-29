@@ -19,4 +19,5 @@
 - `dpd.py` usa el modo de cálculo de `../modes/` y, para `dpd_max`, lee `previous_output` (output previo de S3);
   `dpd_max = max(dpd_current, dpd_max_previo)` y **nunca decrece**.
 - `vpn.py` usa la tasa **del mensaje** (`metadata.interest_rate`), no la del loan tape.
-- Reusar sanitizadores de `excel_runner` (`sanitize_schedule`, `_installments_from_df`, …) en vez de reimplementar.
+- Los datos llegan ya sanitizados desde los loaders polars de `db_reader` (`load_schedule` / `load_payment_tape`).
+  Para pasar de polars a `list[dict]` para los modos, reusar `_installments_from_pl` / `_payments_from_pl` de `dpd.py`.

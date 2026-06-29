@@ -18,7 +18,7 @@ key            = "{{project_name}}/terraform.tfstate"
 |------------|-------------|---------|
 | `{{bucket_prefix}}` | Prefijo del bucket (único por organización) | `6fc5w786` |
 | `{{env}}` | Nombre del ambiente | `dev`, `stg`, `prod` |
-| `{{project_name}}` | Nombre del proyecto (kebab-case) | `documents-api` |
+| `{{project_name}}` | Nombre del proyecto (kebab-case) | `project-name` |
 
 ## Ejemplo para dev
 

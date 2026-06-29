@@ -2,7 +2,7 @@
 
 ## Contexto
 
-El proyecto `documents-api` necesita almacenar configuración de la aplicación en AWS Parameter Store (valores no secretos como URLs, feature flags, timeouts).
+El proyecto `project-name` necesita almacenar configuración de la aplicación en AWS Parameter Store (valores no secretos como URLs, feature flags, timeouts).
 
 ## Archivos modificados
 
@@ -32,7 +32,7 @@ variable "parameter_store_application_name" {
 ### 3. Agregar valor en `deploy/terraform/configuration/global.tfvars`
 
 ```hcl
-parameter_store_application_name = "Vaas-DocumentsApi"
+parameter_store_application_name = "Vaas-ProjectName"
 ```
 
 ### 4. Pasar la configuración al servicio ECS

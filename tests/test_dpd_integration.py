@@ -17,7 +17,7 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from dpd.excel_runner import load_payment_tape, load_schedule
+from dpd.db_reader import load_payment_tape, load_schedule
 from dpd.products import dpd as dpd_product
 
 # ─── Constantes ──────────────────────────────────────────────────────────────

@@ -189,7 +189,7 @@ output "sqs_execute_process_url" { value = aws_sqs_queue.queue.url }
 ### En main.tf agregar:
 ```hcl
 module "{{queue_name}}_queue" {
-  source               = "./sns_sqs"
+  source               = "git@github.com:getvaas/tf_modules.git//sns_sqs"
   name                 = replace("${local.name}-{{queue_purpose}}", "-", "_")
   visibility_timeout   = 300
   max_receive_count    = 5

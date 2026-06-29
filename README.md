@@ -1,11 +1,12 @@
 # Days Past Due (DPD) — Payments Expand
 
 Cálculo de **morosidad (Days Past Due)** y productos derivados sobre el loan tape de una compañía.
-El núcleo de cómputo es puro (sin BD ni AWS) y se reutiliza desde tres puntos de entrada:
+El núcleo de procesamiento ([dpd/processor.py](dpd/processor.py)) es compartido por dos puntos de entrada
+productivos y un runner local:
 
-1. **AWS Lambda** ([dpd/lambda_handler.py](dpd/lambda_handler.py)) — escucha SQS, calcula, publica en SNS.
-2. **Excel** ([dpd/excel_runner.py](dpd/excel_runner.py)) — corre DPD sobre archivos planos, sin MySQL.
-3. **MySQL → Excel** ([dpd/integrations/db_excel_runner.py](dpd/integrations/db_excel_runner.py)) — lee de BD (solo lectura) y exporta a Excel.
+1. **AWS Lambda** ([dpd/lambda_handler.py](dpd/lambda_handler.py)) — escucha SQS, decide procesar inline o derivar a AWS Batch (según el tamaño del loan tape), calcula y publica en SNS.
+2. **AWS Batch** ([dpd/batch_handler.py](dpd/batch_handler.py)) — para loan tapes grandes; ejecuta el mismo `processor` inline (nunca re-encola).
+3. **Runner local** ([dpd/local_runner.py](dpd/local_runner.py)) — ejecuta el flujo desde un evento JSON, sin AWS real.
 
 ---
 
@@ -75,42 +76,39 @@ DB_PASSWORD=
 
 ## Uso
 
-### 1. Desde Excel (sin BD)
-
-```bash
-python -m dpd.excel_runner \
-    --schedule "tests/Days Past Due.xlsx" \
-    --payment-tape "tests/Days Past Due.xlsx" \
-    --date 2026-10-03 \
-    --mode cascade \
-    --out resultado_dpd.xlsx
-```
-
-Flags: `--mode {cascade,join,both}`, `--grace-days N`, `--partial-counts`, `--schedule-sheet`, `--pt-sheet`.
-Genera un Excel con dos hojas: `schedule_con_dpd` (detalle por cuota) y `resumen_por_contrato`.
-
-### 2. Desde MySQL (solo lectura → Excel)
-
-Análisis del día anterior de una compañía. Pregunta `company_id`/`company_code` si no se pasan:
-
-```bash
-python -m dpd.integrations.db_excel_runner \
-    --company-id 86 --company-code sistecredito --date 2026-06-01
-```
-
-### 3. Como Lambda (Payments Expand)
+### 1. Como Lambda (Payments Expand)
 
 [dpd/lambda_handler.py](dpd/lambda_handler.py) — entry point `handler(event, context)`. Flujo por mensaje SQS:
 
 1. Parsear mensaje SQS → `InboundMessage`
-2. Leer loan tape (input) + output previo desde S3 (para recuperar `dpd_max`)
-3. Leer SPI + payment tape desde MySQL. Si el SPI está vacío y `rate_type='fixed'` → generarlo desde el loan tape y persistirlo (ver `spi_builder.py`)
-4. Calcular los productos pedidos en `metadata.products`
-5. Agregar columnas de trazabilidad (`last_update_date`, `payment_tape_ref`)
-6. Escribir loan tape enriquecido en S3 (`output_file`)
-7. Publicar respuesta en SNS con `MessageAttributes` (`origin`/`target`) para el filtro de suscripción
+2. Leer loan tape (input) desde S3
+3. **Si el loan tape supera `BATCH_ROW_THRESHOLD`** → encolar un job de AWS Batch y retornar; si no, procesar inline (vía `processor.process_loan_tape`)
+4. Leer SPI + payment tape desde MySQL (`db_reader`)
+5. Calcular los productos pedidos en `metadata.products`
+6. Agregar columnas de trazabilidad (`last_update_date`, `payment_tape_ref`)
+7. Escribir loan tape enriquecido en S3 (`output_file`)
+8. Publicar respuesta en SNS con `MessageAttributes` (`origin`/`target`) para el filtro de suscripción
 
-Variables de entorno: `SNS_RESPONSE_TOPIC_ARN` + las de BD (`DB_*`).
+> La decisión de derivar a Batch vive **solo** en `lambda_handler`. El job de Batch usa `processor` directamente
+> (no conoce el umbral), así que procesa inline y nunca vuelve a encolar otro job.
+
+### 2. Como job de AWS Batch
+
+```bash
+python -m dpd.batch_handler --payload '{"origin": "ENRICHER", "target": "PAYMENTS_EXPAND", ...}'
+```
+
+El payload también puede llegar por la variable de entorno `DPD_BATCH_PAYLOAD`. Ejecuta el mismo procesamiento que el camino inline de la Lambda.
+
+### 3. Runner local (sin AWS real)
+
+```bash
+python -m dpd.local_runner --event evento.json            # ejecuta el handler
+python -m dpd.local_runner --event evento.json --dry-run  # solo parsea/valida
+```
+
+Variables de entorno: `SNS_RESPONSE_TOPIC_ARN`, credenciales de BD (vía Secrets Manager en la nube), y
+`BATCH_JOB_QUEUE` / `BATCH_JOB_DEFINITION` / `BATCH_ROW_THRESHOLD`.
 El protocolo de mensajes (`InboundMessage`/`OutboundMessage`/`MessageMetadata`) está en [dpd/models.py](dpd/models.py).
 
 ---
@@ -135,14 +133,14 @@ Cuando la Lambda consulta `scheduled_payments_installments` y la tabla está vac
 1. Convierte la tasa anual efectiva a tasa periódica: `(1 + r_anual)^(1/n) - 1`
 2. Genera amortización de cuota fija (PMT): `pmt = P × r / (1 − (1+r)^−n)`
 3. Hace `INSERT` batch en `scheduled_payments_installments` y `COMMIT`
-4. Devuelve el DataFrame en el mismo formato que `db_reader.read_schedule` para continuar el run sin releer la BD
+4. Devuelve el DataFrame en el mismo formato que los loaders de `db_reader` para continuar el run sin releer la BD
 
 Si el loan tape usa nombres de columna distintos, se puede configurar vía `LoanTapeColumns`:
 ```python
 from dpd.spi_builder import build_and_persist, LoanTapeColumns
 spi_df = build_and_persist(
     loan_tape=df,
-    company_code="finkargo",
+    company_id=86,
     columns=LoanTapeColumns(original_principal="disbursement_amount"),
 )
 ```
@@ -155,39 +153,42 @@ Para `rate_type='variable'` el SPI debe cargarse manualmente — la Lambda lanza
 
 ```
 dpd/
-├── lambda_handler.py        # entry point Lambda (SQS → SNS)
+├── lambda_handler.py        # entry point Lambda: decide inline vs Batch
+├── batch_handler.py         # entry point AWS Batch (procesa inline vía processor)
+├── local_runner.py          # runner local desde evento JSON
+├── processor.py             # núcleo: lee datos → productos → S3 → SNS (compartido)
+├── batch_submitter.py       # encola jobs en AWS Batch (usado solo por lambda_handler)
 ├── models.py                # protocolo de mensajes SQS/SNS
-├── config.py                # DBConfig (env) + RunConfig (parámetros de cálculo)
-├── excel_runner.py          # carga Excel, sanitiza, compute_dpd() — núcleo de cómputo
-├── db_reader.py             # SELECTs a MySQL para la Lambda
+├── config/                  # DBConfig (env/Secrets Manager) + RunConfig + constantes Batch
+├── db_reader.py             # lectura de MySQL: load_schedule/load_payment_tape (polars) + read_last_dates
 ├── spi_builder.py           # genera SPI desde loan tape (PMT) y persiste en MySQL
-├── s3_io.py                 # read/write loan tape en S3 (csv/parquet)
 ├── sns_publisher.py         # publicación de respuesta en SNS
 ├── modes/
 │   ├── join_installment.py  # Modo 1: join por referencia de cuota
 │   └── cascade_fifo.py      # Modo 2: cascada FIFO
 ├── products/
-│   ├── dpd.py               # dpd_current / dpd_max / amount_in_arrears
+│   ├── dpd.py               # dpd_current / amount_in_arrears
 │   ├── total_amount.py      # total_amount_paid
 │   └── vpn.py               # valor presente neto
+├── utils/
+│   ├── aws_boto_session.py  # sesión boto3
+│   ├── s3.py                # read/write loan tape en S3 (csv/parquet)
+│   ├── decimals.py          # to_decimal()
+│   └── dates.py             # to_date()
 └── integrations/
-    ├── db.py                # wrapper PyMySQL (SQL crudo, sin ORM)
-    ├── queries.py           # summary queries por contrato (solo lectura)
-    └── db_excel_runner.py   # MySQL (solo lectura) → Excel
+    └── db.py                # wrapper PyMySQL (connect/cursor/connection, SQL crudo, sin ORM)
 ```
 
 ---
 
 ## Tests
 
-Smoke test de integración contra un MySQL descartable (requiere Docker):
+Runner canónico basado en Docker (definido en `.sdd.json`):
 
 ```bash
-./tests/run.sh join                      # Modo 1
-./tests/run.sh cascade                   # Modo 2
-./tests/run.sh cascade --partial-counts
+./scripts/run-tests.sh
 ```
 
-Levanta un contenedor `dpd-mysql`, aplica `tests/schema.sql` + `tests/seed.sql`, corre el job e imprime `tests/verify.sql`. Borralo con `docker rm -f dpd-mysql`.
-
-> ⚠ **Pendiente:** [tests/run.sh](tests/run.sh) todavía invoca `python -m dpd.main`, un entry point que se eliminó en el refactor a `integrations/`. Mientras no se actualice, para correr DPD contra MySQL usá [dpd/integrations/db_excel_runner.py](dpd/integrations/db_excel_runner.py) (ver sección Uso §2).
+Los tests unitarios mockean BD/AWS (no requieren servicios). Los tests marcados `@pytest.mark.integration`
+([tests/test_dpd_integration.py](tests/test_dpd_integration.py)) requieren un MySQL local y se **skipean**
+automáticamente si la BD no está disponible.

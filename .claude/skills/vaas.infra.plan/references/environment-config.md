@@ -96,7 +96,7 @@ Ejemplos:
 | Key | `<project-name>/terraform.tfstate` |
 | Encrypt | `true` |
 
-Ejemplo para dev (como documents-api):
+Ejemplo para dev (como project-name):
 ```
 bucket         = "6fc5w786-dev-terraform-states-bucket"
 encrypt        = true

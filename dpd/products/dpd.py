@@ -1,54 +1,89 @@
 """Product: Days Past Due.
 
 Agrega columnas DPD al loan tape por contrato.
-Columnas que añade:
+Columnas que devuelve:
     dpd_current       — máximo DPD entre cuotas vencidas del contrato
-    dpd_max           — high-watermark histórico: max(dpd_max_previo, dpd_current)
     amount_in_arrears — suma de arrears en cuotas con dpd > 0
 """
 from __future__ import annotations
 
 import logging
 from datetime import date
-from typing import Optional
 
-import pandas as pd
+import polars as pl
 
 from ..config import RunConfig
-from ..modes import cascade_fifo
-from ..excel_runner import sanitize_schedule, sanitize_payment_tape, _installments_from_df, _payments_from_df
+from ..modes import cascade_fifo, join_installment
 
 log = logging.getLogger(__name__)
 
 
+def _installments_from_pl(spi: pl.DataFrame) -> list[dict]:
+    date_col = "installment_date" if "installment_date" in spi.columns else "date"
+    valid = (
+        spi
+        .filter(pl.col(date_col).is_not_null() & (pl.col("gross_amount").fill_null(0) > 0))
+        .with_columns(pl.col(date_col).alias("installment_date"))
+    )
+    return [
+        {
+            "id": r["id"],
+            "borrower_contract_id": r["borrower_contract_id"],
+            "borrower_installment_reference": r.get("borrower_installment_reference"),
+            "installment_date": r["installment_date"],
+            "gross_amount": r.get("gross_amount", 0),
+            "guarantee_amount": r.get("guarantee_amount", 0),
+            "principal_amount": r.get("principal_amount", 0),
+            "interest_amount": r.get("interest_amount", 0),
+            "tax_amount": r.get("tax_amount", 0),
+            "fee_amount": r.get("fee_amount", 0),
+        }
+        for r in valid.to_dicts()
+    ]
+
+
+def _payments_from_pl(payments: pl.DataFrame) -> list[dict]:
+    valid = payments.filter(
+        pl.col("payment_date").is_not_null() & (pl.col("total_payment").fill_null(0) > 0)
+    )
+    return [
+        {
+            "borrower_contract_id": r["borrower_contract_id"],
+            "borrower_installment_reference": r.get("borrower_installment_reference"),
+            "payment_date": r["payment_date"],
+            "total_payment": r.get("total_payment", 0),
+        }
+        for r in valid.to_dicts()
+    ]
+
+
 def compute(
-    loan_tape: pd.DataFrame,
-    spi_df: pd.DataFrame,
-    payments_df: pd.DataFrame,
+    loan_tape: pl.DataFrame,
+    spi_df: pl.DataFrame,
+    payments_df: pl.DataFrame,
     key: str,
     calc_date: date | None = None,
     grace_days: int = 1,
     mode: str = "cascade",
     paid_threshold: float = 1.0,
-    previous_output: Optional[pd.DataFrame] = None,
-) -> pd.DataFrame:
-    """Calcula DPD por contrato y lo agrega al loan tape.
+) -> pl.DataFrame:
+    """Calcula DPD por contrato.
+
+    Devuelve un DataFrame con solo (key, dpd_current, amount_in_arrears) —
+    sin copiar el loan_tape. El join al loan_tape lo hace el caller.
 
     Args:
-        loan_tape:        DataFrame con una fila por contrato. Debe tener la columna `key`.
-        spi_df:           DataFrame de scheduled_payments_installments (desde DB o Excel).
-        payments_df:      DataFrame de payment_tape (desde DB o Excel).
-        key:              Nombre de la columna en loan_tape que identifica el contrato.
-                          Debe coincidir con `borrower_contract_id` en spi y payments.
-        calc_date:        Fecha de corte. Default: hoy.
-        grace_days:       Días calendario de gracia. Default: 1.
-        mode:             "cascade" (default) | "join".
-        paid_threshold:   Fracción mínima pagada para considerar cuota al día (default 1.0 = 100%).
-        previous_output:  Output del run anterior (leído desde S3) para recuperar dpd_max.
-                          Si es None, dpd_max = dpd_current (primer run o sin historial).
+        loan_tape:      Solo se usa para determinar qué contratos existen (columna key).
+        spi_df:         scheduled_payments_installments.
+        payments_df:    payment_tape.
+        key:            Columna identificadora de contrato en loan_tape.
+        calc_date:      Fecha de corte. Default: hoy.
+        grace_days:     Días de gracia. Default: 1.
+        mode:           "cascade" (default) | "join".
+        paid_threshold: Fracción mínima pagada para cuota al día.
 
     Returns:
-        loan_tape con columnas `dpd_current`, `dpd_max` y `amount_in_arrears` agregadas.
+        DataFrame con columnas (key, dpd_current, amount_in_arrears).
     """
     if calc_date is None:
         calc_date = date.today()
@@ -57,17 +92,6 @@ def compute(
         "[START] dpd.compute | contracts=%d | mode=%s | calc_date=%s | threshold=%s",
         len(loan_tape), mode, calc_date, paid_threshold,
     )
-
-    # Sanitizar inputs si vienen crudos
-    spi_clean = sanitize_schedule(spi_df) if "installment_date" not in spi_df.columns else spi_df
-    pay_clean = sanitize_payment_tape(payments_df) if "payment_date" not in payments_df.columns else payments_df
-
-    # Renombrar columna `date` → `installment_date` si viene de la BD
-    if "installment_date" not in spi_clean.columns and "date" in spi_clean.columns:
-        spi_clean = spi_clean.rename(columns={"date": "installment_date"})
-
-    spi_aligned = spi_clean.copy()
-    pay_aligned = pay_clean.copy()
 
     cfg = RunConfig(
         company_id=0,
@@ -78,8 +102,8 @@ def compute(
         paid_threshold=paid_threshold,
     )
 
-    insts = _installments_from_df(spi_aligned)
-    pays = _payments_from_df(pay_aligned)
+    insts = _installments_from_pl(spi_df)
+    pays = _payments_from_pl(payments_df)
 
     log.info(
         "dpd.compute | installments=%d | payments=%d → running %s mode",
@@ -89,7 +113,6 @@ def compute(
     if mode == "cascade":
         results = list(cascade_fifo.compute_from_data(insts, pays, cfg))
     else:
-        from ..modes import join_installment
         results = list(join_installment.compute_from_data(insts, pays, cfg))
 
     log.info(
@@ -97,52 +120,49 @@ def compute(
         len(results), sum(1 for r in results if r.get("dpd_current", 0) > 0),
     )
 
+    # Contratos del loan_tape sin resultado → dpd_current=0, amount_in_arrears=0
+    contracts = loan_tape.select(pl.col(key)).rename({key: "borrower_contract_id"})
+
     if not results:
-        loan_tape = loan_tape.copy()
-        loan_tape["dpd_current"] = 0
-        loan_tape["dpd_max"] = 0
-        loan_tape["amount_in_arrears"] = 0.0
-        return loan_tape
+        return contracts.with_columns([
+            pl.lit(0).alias("dpd_current"),
+            pl.lit(0.0).alias("amount_in_arrears"),
+        ]).rename({"borrower_contract_id": key})
 
-    results_df = pd.DataFrame(results)
-    results_df["amount_in_arrears"] = results_df["amount_in_arrears"].astype(float)
+    results_df = pl.DataFrame(results).with_columns(
+        pl.col("amount_in_arrears").cast(pl.Float64)
+    )
 
-    # Unir con SPI para obtener el borrower_contract_id por installment id
-    spi_ids = spi_aligned[["id", "borrower_contract_id"]].copy()
-    results_df = results_df.merge(spi_ids, on="id", how="left")
+    # Unir con SPI para obtener borrower_contract_id por installment id
+    spi_ids = spi_df.select(["id", "borrower_contract_id"])
+    results_df = results_df.join(spi_ids, on="id", how="left")
 
-    # Agregar por contrato: max DPD, suma arrears solo en cuotas en mora
+    # Agregar por contrato
     per_contract = (
-        results_df.groupby("borrower_contract_id", as_index=False)
-                  .agg(
-                      dpd_current=("dpd_current", "max"),
-                      amount_in_arrears=(
-                          "amount_in_arrears",
-                          lambda s: s[results_df.loc[s.index, "dpd_current"] > 0].sum(),
-                      ),
-                  )
+        results_df
+        .with_columns(
+            pl.when(pl.col("dpd_current") > 0)
+            .then(pl.col("amount_in_arrears"))
+            .otherwise(0.0)
+            .alias("_arrears_in_mora")
+        )
+        .group_by("borrower_contract_id")
+        .agg([
+            pl.col("dpd_current").max(),
+            pl.col("_arrears_in_mora").sum().alias("amount_in_arrears"),
+        ])
     )
 
-    # Merge contra el loan tape usando el key
-    out = loan_tape.copy()
-    out = out.merge(
-        per_contract.rename(columns={"borrower_contract_id": key}),
-        on=key,
-        how="left",
+    # Join contra contratos del loan_tape para rellenar los que no tienen cuotas
+    out = (
+        contracts
+        .join(per_contract, on="borrower_contract_id", how="left")
+        .with_columns([
+            pl.col("dpd_current").fill_null(0).cast(pl.Int64),
+            pl.col("amount_in_arrears").fill_null(0.0),
+        ])
+        .rename({"borrower_contract_id": key})
     )
-    out["dpd_current"] = out["dpd_current"].fillna(0).astype(int)
-    out["amount_in_arrears"] = out["amount_in_arrears"].fillna(0.0)
 
-    # dpd_max: high-watermark histórico.
-    # Si hay output previo con dpd_max, tomamos max(prev, current). Si no, dpd_max = dpd_current.
-    if previous_output is not None and "dpd_max" in previous_output.columns and key in previous_output.columns:
-        prev_max = previous_output[[key, "dpd_max"]].copy()
-        prev_max["dpd_max"] = pd.to_numeric(prev_max["dpd_max"], errors="coerce").fillna(0).astype(int)
-        out = out.merge(prev_max.rename(columns={"dpd_max": "_prev_dpd_max"}), on=key, how="left")
-        out["_prev_dpd_max"] = out["_prev_dpd_max"].fillna(0).astype(int)
-        out["dpd_max"] = out[["dpd_current", "_prev_dpd_max"]].max(axis=1)
-        out = out.drop(columns=["_prev_dpd_max"])
-    else:
-        out["dpd_max"] = out["dpd_current"]
-
+    log.info("[END] dpd.compute | dpd_current_max=%d", out["dpd_current"].max() or 0)
     return out

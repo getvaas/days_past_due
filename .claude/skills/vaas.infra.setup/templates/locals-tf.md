@@ -79,7 +79,7 @@ locals {
 
 | Placeholder | Descripción | Ejemplo |
 |------------|-------------|---------|
-| `{{service_name}}` | Nombre del servicio en kebab-case | `documents-api` |
+| `{{service_name}}` | Nombre del servicio en kebab-case | `project-name` |
 | `{{memory}}` | Memoria en MB | `3072` |
 | `{{cpu}}` | CPU en millicores (string) | `"2048"` |
 | `{{container_port}}` | Puerto del contenedor | `"80"` |

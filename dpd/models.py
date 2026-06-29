@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
+from .utils.dates import to_date as _to_date
+
 
 @dataclass
 class MessageMetadata:
@@ -19,13 +21,6 @@ class MessageMetadata:
 
     @classmethod
     def from_dict(cls, d: dict) -> "MessageMetadata":
-        def _to_date(v) -> Optional[date]:
-            if v is None:
-                return None
-            if isinstance(v, date):
-                return v
-            return date.fromisoformat(str(v))
-
         return cls(
             products=d.get("products", []),
             interest_rate=d.get("interest_rate"),
@@ -65,7 +60,8 @@ class InboundMessage:
     target_type: str     # "COMPANY"
     target_id: int       # company_id numérico
     metadata: MessageMetadata
-    rate_type: str = "fixed"  # "fixed" | "variable". Variable omite generación de SPI.
+    rate_type: str = "fixed"           # "fixed" | "variable"
+    mode: Optional[str] = None         # "cascade" | "join" | None → ambos modos
 
     @classmethod
     def from_sqs_record(cls, record: dict) -> "InboundMessage":
@@ -82,6 +78,7 @@ class InboundMessage:
             target_id=int(body["target_id"]),
             metadata=MessageMetadata.from_dict(body.get("metadata", {})),
             rate_type=body.get("rate_type", "fixed"),
+            mode=body.get("mode"),
         )
 
 

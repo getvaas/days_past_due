@@ -1,6 +1,6 @@
 # Estructura de Proyecto Terraform — Vaas
 
-Esta es la estructura estándar para infraestructura Terraform en proyectos de Vaas, basada en el patrón de documents-api.
+Esta es la estructura estándar para infraestructura Terraform en proyectos de Vaas.
 
 ---
 
@@ -98,12 +98,12 @@ provider "aws" {
 
 # Módulos
 module "iam_orchestrator" {
-  source           = "./iam"
+  source           = "git@github.com:getvaas/tf_modules.git//iam"
   iam_orchestrator = local.iam_orchestrator
 }
 
 module "ecr_orchestrator" {
-  source           = "./ecr"
+  source           = "git@github.com:getvaas/tf_modules.git//ecr"
   ecr_orchestrator = local.ecr_orchestrator
 }
 

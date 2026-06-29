@@ -46,14 +46,14 @@ Reglas:
   renombrando ese lado a `key`.
 - **Manejar el caso vacío** explícitamente: si no hay datos, agregar la columna con su valor neutro (0 / 0.0) y retornar.
 - `fillna()` tras el `LEFT JOIN` para contratos sin match.
-- Reutilizá los sanitizadores y conversores de `excel_runner` (`sanitize_schedule`, `sanitize_payment_tape`,
-  `_installments_from_df`, `_payments_from_df`) en vez de reimplementarlos.
+- Reutilizá los conversores polars→dicts de `products/dpd.py` (`_installments_from_pl`, `_payments_from_pl`)
+  en vez de reimplementarlos. Los datos llegan ya sanitizados desde los loaders de `db_reader`.
 
-## Sanitización: misma entrada sin importar el origen
+## Sanitización: en los loaders de `db_reader`
 
-`excel_runner.sanitize_schedule()` y `sanitize_payment_tape()` normalizan los datos vengan de Excel o de MySQL:
-fechas a `datetime.date`, `borrower_installment_reference` a `str`, buckets vacíos a 0, id sintético si falta.
-Los productos detectan si el input ya está sanitizado mirando si existe la columna `installment_date`/`payment_date`.
+`db_reader._sanitize_schedule()` y `_sanitize_payment_tape()` normalizan los datos leídos de MySQL:
+fechas a `date`, `borrower_installment_reference` a `str`, buckets vacíos a 0, id sintético si falta.
+Los loaders devuelven **polars DataFrames** listos para los productos.
 
 ## Do / Don't
 
@@ -62,5 +62,5 @@ Los productos detectan si el input ya está sanitizado mirando si existe la colu
 | Toda la lógica en `compute_from_data` | Lógica distinta entre `compute` y `compute_from_data` |
 | `loan_tape.copy()` antes de agregar columnas | Mutar el DataFrame de entrada |
 | Manejar `df.empty` con valor neutro | Asumir que siempre hay filas |
-| `import` de `integrations.db` local en `compute()` | Importar PyMySQL a nivel de módulo en `modes/` |
-| Reusar sanitizadores de `excel_runner` | Reparsear fechas/refs a mano en cada producto |
+| La lectura de BD vive en `db_reader` (loaders) | Que los `modes/` lean MySQL |
+| Reusar conversores `_*_from_pl` y los loaders de `db_reader` | Reparsear fechas/refs a mano en cada producto |

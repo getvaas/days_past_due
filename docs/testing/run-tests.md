@@ -8,18 +8,9 @@ El proyecto define el runner de tests en `.sdd.json` → `paths.run_tests`:
 ./scripts/run-tests.sh
 ```
 
-Este script está pensado para correr los tests dentro de **Docker**, garantizando resultados consistentes y
-reproducibles sin depender de las dependencias del host.
-
-> ⚠ **El script aún NO existe.** `./scripts/run-tests.sh` no está creado todavía. Para generarlo (adaptado al
-> stack Python de este proyecto), ejecutá:
->
-> ```
-> /sdd.util.makeruntest
-> ```
->
-> Esto crea `scripts/run-tests.sh` y `scripts/clean-test-cache.sh` (este último también configurado en
-> `paths.clean_test_cache`).
+Este script corre los tests dentro de **Docker**, garantizando resultados consistentes y reproducibles sin
+depender de las dependencias del host. Los tests unitarios mockean BD/AWS; los `@pytest.mark.integration` se
+skipean si no hay MySQL local.
 
 ## Fallback — solo para debugging local rápido
 
@@ -45,6 +36,6 @@ Hay un smoke test contra un MySQL descartable en [tests/run.sh](../../tests/run.
 Levanta un contenedor `dpd-mysql`, aplica `tests/schema.sql` + `tests/seed.sql`, corre el job e imprime
 `tests/verify.sql`. Borralo con `docker rm -f dpd-mysql`.
 
-**Está roto**: invoca `python -m dpd.main`, un entry point eliminado en el refactor a `integrations/`. Hasta
-arreglarlo, para correr DPD contra MySQL usar `python -m dpd.integrations.db_excel_runner` (ver
-[how-to-run/execute.md](../how-to-run/execute.md)). Arreglarlo implica apuntar `run.sh` al runner vigente.
+**Está roto**: invoca `python -m dpd.main`, un entry point que ya no existe. Es legacy — usá el runner oficial
+(`./scripts/run-tests.sh`). Para ejercitar el flujo contra datos reales, ver
+[how-to-run/execute.md](../how-to-run/execute.md) (Lambda / Batch / `local_runner`).

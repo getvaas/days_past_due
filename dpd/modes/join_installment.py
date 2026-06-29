@@ -1,12 +1,10 @@
 """Mode 1 — Join scheduled_payments_installments to payment_tape by installment ref.
 
 Pagos agregados con SUM(total_payment) y comparados contra gross_amount.
-Compatible con MySQL 5.7+ (sin CTEs).
 
-Dos puntos de entrada:
-- `compute(conn, cfg)`: trae los datos via SQL y produce DPD por cuota.
-- `compute_from_data(installments, payments, cfg)`: misma lógica pura sobre listas
-  de dicts. Usado por tests/notebook para no depender de MySQL.
+Entry point: `compute_from_data(installments, payments, cfg)` — lógica pura sobre
+listas de dicts, sin dependencia de MySQL. Los datos se cargan en la capa de
+productos/loaders y se pasan ya como dicts.
 """
 from __future__ import annotations
 
@@ -16,44 +14,9 @@ from decimal import Decimal
 from typing import Iterable, Iterator
 
 from ..config import RunConfig
+from ..utils.decimals import to_decimal as _to_dec
 
 log = logging.getLogger(__name__)
-
-# LEFT JOIN para no perder cuotas sin pago. La subquery agrega payment_tape
-# por (borrower_contract_id, borrower_installment_reference).
-#
-SCHEDULE_WITH_PAYMENTS_SQL = """
-SELECT
-    spi.id                                  AS id,
-    spi.borrower_contract_id                AS borrower_contract_id,
-    spi.borrower_installment_reference      AS borrower_installment_reference,
-    spi.`date`                              AS installment_date,
-    spi.gross_amount                        AS gross_amount,
-    COALESCE(p.total_paid, 0)               AS total_paid
-FROM scheduled_payments_installments spi
-LEFT JOIN (
-    SELECT borrower_contract_id,
-           borrower_installment_reference,
-           SUM(total_payment) AS total_paid
-    FROM payment_tape
-    WHERE company_id = %(company_id)s
-      AND borrower_installment_reference IS NOT NULL
-    GROUP BY borrower_contract_id, borrower_installment_reference
-) p
-  ON p.borrower_contract_id = spi.borrower_contract_id
- AND p.borrower_installment_reference = spi.borrower_installment_reference
-WHERE spi.company_id = %(company_id)s;
-"""
-
-
-def _to_dec(v) -> Decimal:
-    if v is None:
-        return Decimal(0)
-    # pandas representa celdas vacías como float('nan'); tratarlas como 0.
-    if isinstance(v, float) and v != v:
-        return Decimal(0)
-    # str() para evitar imprecisión al convertir floats que vengan de pandas/Excel.
-    return Decimal(str(v))
 
 
 def _dpd_for_row(
@@ -118,38 +81,6 @@ def compute_from_data(
         )
         yield {
             "id": inst["id"],
-            "dpd_current": dpd,
-            "amount_in_arrears": arrears,
-        }
-
-
-def compute(conn, cfg: RunConfig) -> Iterator[dict]:
-    """Yield {id, dpd_current, amount_in_arrears} por cuota — desde la BD."""
-    from ..integrations.db import cursor
-    with cursor(conn) as cur:
-        cur.execute(
-            SCHEDULE_WITH_PAYMENTS_SQL,
-            {"company_id": cfg.company_id},
-        )
-        rows = cur.fetchall()
-
-    log.info(
-        "join mode: %d installments fetched for company_id=%s",
-        len(rows), cfg.company_id,
-    )
-
-    # Ya viene pre-agregado por el SQL; emulamos la forma esperada por _dpd_for_row directamente.
-    for row in rows:
-        gross = _to_dec(row.get("gross_amount"))
-        paid = _to_dec(row.get("total_paid"))
-        dpd, arrears = _dpd_for_row(
-            installment_date=row["installment_date"],
-            gross_amount=gross,
-            total_paid=paid,
-            cfg=cfg,
-        )
-        yield {
-            "id": row["id"],
             "dpd_current": dpd,
             "amount_in_arrears": arrears,
         }

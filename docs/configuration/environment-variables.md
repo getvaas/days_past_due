@@ -9,10 +9,10 @@ Toda la configuración sensible se pasa por variables de entorno.
 - **Local** (sin `AWS_LAMBDA_FUNCTION_NAME`): `DBConfig.from_env()` → variables `DB_*`, auto-cargadas desde
   `.env` en la raíz del repo (ver `_load_dotenv`).
 - **Lambda** (`AWS_LAMBDA_FUNCTION_NAME` presente, lo inyecta AWS): `DBConfig.from_secrets_manager()` → lee el
-  secret indicado por `PAYMENTS_SECRET_NAME` desde AWS Secrets Manager y parsea su URL.
+  secret indicado por `SECRET_NAME` desde AWS Secrets Manager y parsea su URL.
 
-Los callers del flujo Lambda (`db_reader.py`, `spi_builder.py`) usan `DBConfig.load()`.
-`integrations/db_excel_runner.py` es CLI solo local y sigue usando `from_env()`.
+Los callers del flujo (`db_reader.py`, `spi_builder.py`) usan `DBConfig.load()`, que despacha entre
+`from_env()` (local) y `from_secrets_manager()` (Lambda/Batch) según el entorno.
 
 ## Base de datos (MySQL) — solo local (`.env`)
 
@@ -24,13 +24,11 @@ Los callers del flujo Lambda (`db_reader.py`, `spi_builder.py`) usan `DBConfig.l
 | `DB_PORT` | No | `3306` | Puerto MySQL. |
 | `DB_PASSWORD` | No | `""` | Password MySQL. |
 
-`DEFAULT_DBNAME = "payments_db"` en `db_excel_runner.py` se usa solo si no hay `DB_NAME` ni `--dbname`.
-
 ## Base de datos (MySQL) — Lambda (Secrets Manager)
 
 | Variable | Requerida | Descripción |
 |----------|-----------|-------------|
-| `PAYMENTS_SECRET_NAME` | **Sí** (en Lambda) | Nombre/ARN del secret JSON con las credenciales de Payments. |
+| `SECRET_NAME` | **Sí** (en Lambda/Batch) | Nombre del secret en AWS Secrets Manager (convención: `{env}_days_past_due`). |
 
 El secret debe tener las claves `DATASOURCE___PAYMENTS_DB___URL` (ej. `jdbc:mysql://host:3306/payments_db`),
 `DATASOURCE___PAYMENTS_DB___USERNAME` y `DATASOURCE___PAYMENTS_DB___PASSWORD`. El rol de ejecución de la Lambda

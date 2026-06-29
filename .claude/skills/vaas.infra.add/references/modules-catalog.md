@@ -23,7 +23,7 @@ module "example" {
 | Variable | Tipo | Descripción |
 |----------|------|-------------|
 | `environment` | string | `dev`, `stg`, `prod` |
-| `ecs_service_name` | string | Nombre del servicio, e.g. `"dev-documents-api"` |
+| `ecs_service_name` | string | Nombre del servicio, e.g. `"dev-project-name"` |
 | `ecs_cpu_millis_min` | number | CPU en millicores, e.g. `2048` |
 | `ecs_memory_min` | number | Memoria en MB, e.g. `3072` |
 | `sns_alarms_topic_arn` | string | ARN del topic de alarmas SNS |
@@ -85,7 +85,7 @@ module "my_service" {
 }
 ```
 
-**Ejemplo completo** (como documents-api):
+**Ejemplo completo** (como project-name):
 ```hcl
 module "ecs_service" {
   source                    = "git@github.com:getvaas/tf_modules.git//ecs_service"
@@ -457,6 +457,54 @@ module "my_lambda" {
 
 ---
 
+### lambda_docker — Lambda Function (Container Image)
+
+**Source**: `git@github.com:getvaas/tf_modules.git//lambda_docker`
+**Propósito**: AWS Lambda que corre una imagen Docker desde ECR. El módulo crea el repositorio ECR y hace un push inicial de `alpine` como placeholder (tag `0.0.1`); la imagen real se pushea via CI/CD.
+
+**Inputs**:
+| Variable | Tipo | Default | Descripción |
+|----------|------|---------|-------------|
+| `name` | string | (requerido) | Nombre de la función y prefijo del repo ECR |
+| `iam_role_lambda_arn` | string | (requerido) | ARN del rol de ejecución |
+| `environment_variables` | map(any) | (requerido) | Variables de entorno |
+| `memory_size` | number | `256` | Memoria en MB |
+| `timeout` | number | `60` | Timeout en segundos |
+| `architectures` | list(string) | `[]` | `["x86_64"]` o `["arm64"]` |
+| `subnet_ids` | list(string) | `[]` | VPC subnets (vacío = sin VPC) |
+| `security_group_ids` | list(string) | `[]` | SGs (vacío = sin VPC) |
+| `ephemeral_storage` | number | `512` | `/tmp` size en MB |
+| `mutability` | string | `"IMMUTABLE"` | Mutability del ECR: `MUTABLE` o `IMMUTABLE` |
+| `region` | string | `"us-east-1"` | Región para el bootstrap docker push |
+| `profile` | string | `""` | AWS CLI profile para el bootstrap docker push |
+| `efs_config_arn` | string | `null` | EFS Access Point ARN o File System ARN |
+| `efs_config_mount_path` | string | `"/mnt/efs"` | Mount path de EFS dentro de la Lambda |
+| `reserved_concurrent_executions` | number | `-1` | `-1` = sin límite, `0` = disabled |
+
+**Ejemplo**:
+```hcl
+module "image_processor" {
+  source              = "git@github.com:getvaas/tf_modules.git//lambda_docker"
+  name                = "${var.environment}-image-processor"
+  iam_role_lambda_arn = module.iam_lambda.iam_role_lambda_arn
+  memory_size         = 1024
+  timeout             = 300
+  environment_variables = {
+    "ENVIRONMENT" = var.environment
+    "BUCKET"      = module.s3.bucket_name
+  }
+}
+```
+
+**Outputs**:
+- `lambda_function_arn`
+- `lambda_function_name`
+- `ecr_repository_uri` — URI del repo ECR creado para pushear la imagen real
+
+**Nota**: La Lambda usa `ignore_changes` en `image_uri` y `environment.VERSION` para que `terraform apply` no resetee la imagen desplegada por CI/CD.
+
+---
+
 ### eventbridge_invoke_lambda — EventBridge Schedule → Lambda
 
 **Source**: `git@github.com:getvaas/tf_modules.git//eventbridge_invoke_lambda`
@@ -541,6 +589,35 @@ module "parameter_store" {
 
 ---
 
+### secrets_manager — AWS Secrets Manager
+
+**Source**: `git@github.com:getvaas/tf_modules.git//secrets_manager`
+**Propósito**: Secret en AWS Secrets Manager con un JSON cuyas keys vienen del módulo y cuyos valores se editan a mano en la consola. `lifecycle.ignore_changes` evita que `terraform apply` sobreescriba los secretos reales.
+
+**Inputs**:
+| Variable | Tipo | Descripción |
+|----------|------|-------------|
+| `name` | string | Nombre del secret |
+| `secrets` | list(string) | Lista de keys del JSON (los valores iniciales son strings vacíos) |
+
+**Ejemplo**:
+```hcl
+module "api_credentials" {
+  source = "git@github.com:getvaas/tf_modules.git//secrets_manager"
+  name   = "${var.environment}-my-service-api-credentials"
+  secrets = [
+    "host",
+    "username",
+    "password",
+  ]
+}
+```
+
+**Outputs**:
+- `secret_arn` — ARN del secret. Úsalo en ECS `secrets` con sufijo `:key::` para referenciar cada key (ej. `"${module.api_credentials.secret_arn}:password::"`).
+
+---
+
 ## Messaging
 
 ### sns_sqs — SNS Topic + SQS Queue
@@ -597,12 +674,14 @@ module "events_queue" {
 | API/servicio web con un puerto | `ecs_service` |
 | Servicio con múltiples puertos (HTTP + gRPC) | `ecs_service_multiple_ports` |
 | Tarea programada (cron) o batch | `ecs_task` |
-| Función serverless | `lambda` + `iam_lambda` |
+| Función serverless (código zip desde S3) | `lambda` + `iam_lambda` |
+| Función serverless (imagen Docker) | `lambda_docker` + `iam_lambda` |
 | Cron que invoca Lambda | `eventbridge_invoke_lambda` |
 | Repositorio de imágenes Docker | `ecr` |
 | Almacenamiento de archivos | `s3` |
 | Cola de mensajes | `sns_sqs` |
 | Configuración de la aplicación | `parameter_store` |
+| Credenciales / secretos sensibles | `secrets_manager` |
 | Logs | `cloudwatch` |
 | Rol IAM para ECS | `iam_ecs` (o el auto-creado de `ecs_service`) |
 | Rol IAM para Lambda | `iam_lambda` |

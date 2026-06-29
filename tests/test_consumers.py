@@ -3,10 +3,9 @@ directo. Todo mockeado — sin BD, AWS ni red.
 """
 from __future__ import annotations
 
-import datetime as dt
 from unittest.mock import patch
 
-import pandas as pd
+import polars as pl
 
 from dpd.models import InboundMessage, MessageMetadata
 
@@ -20,20 +19,19 @@ def _inbound(target_id=143, products=None):
     )
 
 def test_process_message_loads_from_db_with_company_id():
-    from dpd import lambda_handler
+    from dpd import lambda_handler, processor
 
-    loan_tape = pd.DataFrame({"contract_id": ["C1"]})
-    spi = pd.DataFrame({"borrower_contract_id": ["C1"], "id": [1]})
-    pays = pd.DataFrame(columns=["borrower_contract_id", "payment_date", "total_payment"])
+    loan_tape = pl.DataFrame({"contract_id": ["C1"]})
+    spi = pl.DataFrame({"borrower_contract_id": ["C1"], "id": [1]})
+    pays = pl.DataFrame(schema=["borrower_contract_id", "payment_date", "total_payment"])
     last = {"last_payment_tape_date": None, "last_schedule_payment_date": None, "last_payment_date": None}
 
     with patch.object(lambda_handler, "read_loan_tape", return_value=loan_tape), \
-         patch.object(lambda_handler, "try_read_loan_tape", return_value=None), \
-         patch.object(lambda_handler, "load_schedule", return_value=spi) as m_sched, \
-         patch.object(lambda_handler, "load_payment_tape", return_value=pays) as m_pay, \
-         patch.object(lambda_handler, "write_loan_tape") as m_write, \
-         patch.object(lambda_handler, "read_last_dates", return_value=last), \
-         patch.object(lambda_handler, "publish_response", return_value="mid"):
+         patch.object(processor, "load_schedule", return_value=spi) as m_sched, \
+         patch.object(processor, "load_payment_tape", return_value=pays) as m_pay, \
+         patch.object(processor, "write_loan_tape") as m_write, \
+         patch.object(processor, "read_last_dates", return_value=last), \
+         patch.object(processor, "publish_response", return_value="mid"):
         lambda_handler._process_message(_inbound(target_id=143))
 
     m_sched.assert_called_once_with(143)
@@ -57,21 +55,20 @@ def test_batch_config_defaults():
 
 
 def test_lambda_under_threshold_processes_inline():
-    from dpd import lambda_handler, config
+    from dpd import lambda_handler, processor, config
 
     rows = [{"contract_id": f"C{i}"} for i in range(3)]
-    loan_tape = pd.DataFrame(rows)
-    spi = pd.DataFrame({"borrower_contract_id": ["C0"], "id": [1]})
-    pays = pd.DataFrame(columns=["borrower_contract_id", "payment_date", "total_payment"])
+    loan_tape = pl.DataFrame(rows)
+    spi = pl.DataFrame({"borrower_contract_id": ["C0"], "id": [1]})
+    pays = pl.DataFrame(schema=["borrower_contract_id", "payment_date", "total_payment"])
     last = {"last_payment_tape_date": None, "last_schedule_payment_date": None, "last_payment_date": None}
 
     with patch.object(lambda_handler, "read_loan_tape", return_value=loan_tape), \
-         patch.object(lambda_handler, "try_read_loan_tape", return_value=None), \
-         patch.object(lambda_handler, "load_schedule", return_value=spi), \
-         patch.object(lambda_handler, "load_payment_tape", return_value=pays), \
-         patch.object(lambda_handler, "write_loan_tape"), \
-         patch.object(lambda_handler, "read_last_dates", return_value=last), \
-         patch.object(lambda_handler, "publish_response", return_value="mid") as m_sns, \
+         patch.object(processor, "load_schedule", return_value=spi), \
+         patch.object(processor, "load_payment_tape", return_value=pays), \
+         patch.object(processor, "write_loan_tape"), \
+         patch.object(processor, "read_last_dates", return_value=last), \
+         patch.object(processor, "publish_response", return_value="mid") as m_sns, \
          patch.object(lambda_handler, "submit_job") as m_batch, \
          patch.object(config, "BATCH_ROW_THRESHOLD", 5):
         lambda_handler._process_message(_inbound())
@@ -81,14 +78,14 @@ def test_lambda_under_threshold_processes_inline():
 
 
 def test_lambda_over_threshold_submits_batch():
-    from dpd import lambda_handler, config
+    from dpd import lambda_handler, processor, config
 
     rows = [{"contract_id": f"C{i}"} for i in range(10)]
-    loan_tape = pd.DataFrame(rows)
+    loan_tape = pl.DataFrame(rows)
 
     with patch.object(lambda_handler, "read_loan_tape", return_value=loan_tape), \
          patch.object(lambda_handler, "submit_job") as m_batch, \
-         patch.object(lambda_handler, "publish_response") as m_sns, \
+         patch.object(processor, "publish_response") as m_sns, \
          patch.object(config, "BATCH_ROW_THRESHOLD", 5), \
          patch.object(config, "BATCH_JOB_QUEUE", "test-queue"), \
          patch.object(config, "BATCH_JOB_DEFINITION", "test-def"):
@@ -111,7 +108,7 @@ def test_batch_handler_runs_process_message():
         "target_type": "COMPANY", "target_id": 143, "rate_type": "fixed",
         "metadata": {"products": []},
     }
-    with patch("dpd.batch_handler._process_message") as m_proc, \
+    with patch("dpd.batch_handler.process_message") as m_proc, \
          patch("dpd.batch_handler._validate"):
         rc = batch_handler.main(["--payload", __import__("json").dumps(payload)])
 
@@ -120,6 +117,45 @@ def test_batch_handler_runs_process_message():
     called_msg = m_proc.call_args[0][0]
     assert called_msg.job_id == "batch-001"
     assert called_msg.target_id == 143
+
+
+def test_batch_does_not_resubmit_when_over_threshold():
+    """El job de Batch procesa inline aunque el tape supere el umbral.
+
+    Regresión: antes el Batch reusaba la lógica de la Lambda y volvía a derivar a
+    Batch al re-leer el mismo tape grande → bucle infinito de jobs. Ahora el Batch
+    usa `processor`, que no conoce el umbral, así que nunca llama submit_job.
+    """
+    from dpd import batch_handler, processor, config
+    from dpd import batch_submitter
+
+    rows = [{"contract_id": f"C{i}"} for i in range(10)]
+    loan_tape = pl.DataFrame(rows)
+    spi = pl.DataFrame({"borrower_contract_id": ["C0"], "id": [1]})
+    pays = pl.DataFrame(schema=["borrower_contract_id", "payment_date", "total_payment"])
+    last = {"last_payment_tape_date": None, "last_schedule_payment_date": None, "last_payment_date": None}
+
+    payload = {
+        "origin": "ENRICHER", "target": "PAYMENTS_EXPAND",
+        "job_id": "batch-002", "input_file": "s3://b/in.csv",
+        "output_file": "s3://b/out.csv", "key": "contract_id",
+        "target_type": "COMPANY", "target_id": 143, "rate_type": "fixed",
+        "metadata": {"products": []},
+    }
+
+    with patch.object(processor, "read_loan_tape", return_value=loan_tape), \
+         patch.object(processor, "load_schedule", return_value=spi), \
+         patch.object(processor, "load_payment_tape", return_value=pays), \
+         patch.object(processor, "write_loan_tape") as m_write, \
+         patch.object(processor, "read_last_dates", return_value=last), \
+         patch.object(processor, "publish_response", return_value="mid"), \
+         patch.object(batch_submitter, "submit_job") as m_batch, \
+         patch.object(config, "BATCH_ROW_THRESHOLD", 5):
+        rc = batch_handler.main(["--payload", __import__("json").dumps(payload)])
+
+    assert rc == 0
+    m_batch.assert_not_called()  # nunca re-encola → no hay bucle
+    m_write.assert_called_once()  # procesó inline
 
 
 def test_local_runner_dry_run_parses_event(tmp_path):

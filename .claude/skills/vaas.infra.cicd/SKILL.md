@@ -13,7 +13,7 @@ Genera los archivos de CI/CD para un proyecto de Vaas: Jenkinsfile para deployme
 ## Restricciones
 
 - **Solo genera archivos**. Nunca ejecuta pipelines ni deployments.
-- **Sigue los patrones de Vaas** — basados en documents-api como referencia.
+- **Sigue los patrones de Vaas** — basados en el patrón estándar de proyectos Vaas.
 - **Jenkins para deployment**, **GitHub Actions para PR testing**.
 - **Genera para los ambientes** dev, stg, prod con las credenciales correctas.
 
@@ -47,7 +47,7 @@ Leer los archivos del proyecto para determinar:
 
 ### Paso 3: Recopilar información
 
-1. **Nombre del servicio** (e.g., "documents-api") — detectar de infra o preguntar
+1. **Nombre del servicio** (e.g., "project-name") — detectar de infra o preguntar
 2. **Nombre del ECR repository** — detectar de infra o derivar del servicio
 3. **Ambientes a deployar** — por defecto: dev, stg, prod
 4. **Canal de Slack para notificaciones** — por defecto: "jenkins"
@@ -57,11 +57,24 @@ Leer los archivos del proyecto para determinar:
 
 #### Jenkinsfile
 
-Usar `templates/jenkinsfile.md` como base. El Jenkinsfile de Vaas tiene estas etapas:
+Usar `templates/jenkinsfile.md` como base. Hay dos patrones según el stack:
+
+**Java/Gradle (vía `vaas-shared`)**
+
+Genera dos archivos en la raíz del proyecto:
+
+- `Jenkinsfile` — invoca `ciPipeline(...)` de la shared library `vaas-shared`. La shared lib encapsula build, docker, push a ECR, update del task definition y notificaciones Slack.
+- `Jenkinsfile-CD` — invoca `cdPipeline(...)` para aplicar Terraform y actualizar el ECS service.
+
+Ver `references/jenkins-patterns.md` para la firma exacta de cada `*Pipeline()` y la descripción de sus parámetros.
+
+**Otros stacks (Node.js / Python — declarative)**
+
+Genera un único Jenkinsfile completo con estas etapas:
 
 1. **Initialization** — Set build description
 2. **NotificateAction** — Notificación Slack de inicio
-3. **CreateArtifact** — Build del proyecto (gradle/npm/etc)
+3. **CreateArtifact** — Build del proyecto (npm/pip)
 4. **BuildImage** — Docker build con tag de versión
 5. **UploadToEcr** — Push a ECR
 6. **CreateTaskDefinition** — Actualizar task definition en ECS

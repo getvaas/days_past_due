@@ -11,8 +11,8 @@
 | **Alta** | `modes/` (`compute_from_data`) | ~80% | Lógica pura de mora: join vs cascade, buckets, thresholds. Sin BD ni AWS. |
 | **Alta** | `products/` (`compute`) | ~80% | dpd_current/dpd_max, total_amount, vpn. Merge por `key`, casos vacíos. |
 | **Alta** | `spi_builder` (`build_schedule`, `_period_rate`, `_add_months`) | ~80% | Amortización PMT, conversión de tasa, fechas por periodicidad. Sin el `INSERT`. |
-| Media | `excel_runner` (sanitizadores + `compute_dpd`) | razonable | Normalización de datos crudos compartida. |
-| Baja | `s3_io`, `sns_publisher`, `db_reader`, `lambda_handler` | opcional | IO/orquestación: mockear boto3/PyMySQL si se cubren. |
+| Media | `db_reader` (loaders + sanitizadores polars) | razonable | Normalización de datos crudos de MySQL. |
+| Baja | `utils/s3`, `sns_publisher`, `lambda_handler`, `batch_handler`, `processor` | opcional | IO/orquestación: mockear boto3/PyMySQL si se cubren. |
 
 El foco acordado es el **núcleo de cálculo** (`modes/` + `products/`): es lógica pura, determinista y de alto
 valor de negocio, testeable sin infraestructura.

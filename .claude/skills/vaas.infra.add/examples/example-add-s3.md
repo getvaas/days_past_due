@@ -2,7 +2,7 @@
 
 ## Contexto
 
-El proyecto `documents-api` ya tiene infraestructura con ECS service. El developer necesita un nuevo bucket S3 para almacenar reportes exportados.
+El proyecto `project-name` ya tiene infraestructura con ECS service. El developer necesita un nuevo bucket S3 para almacenar reportes exportados.
 
 ## Archivos modificados
 
@@ -50,8 +50,8 @@ output "bucket_arn" { value = aws_s3_bucket.bucket.arn }
 
 ```hcl
 module "s3_reports" {
-  source        = "./s3"
-  bucket_name   = "documents-api-reports"
+  source        = "git@github.com:getvaas/tf_modules.git//s3"
+  bucket_name   = "project-name-reports"
   bucket_prefix = "gf78999f"
   environment   = var.environment
 }

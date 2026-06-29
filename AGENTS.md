@@ -1,10 +1,10 @@
 # AGENTS.md — Days Past Due (DPD) / Payments Expand
 
 Índice de navegación para agentes. Cálculo de **morosidad (Days Past Due)** y productos derivados sobre el loan
-tape de una compañía. Núcleo de cómputo puro (sin BD ni AWS) reutilizado desde 3 puntos de entrada: AWS Lambda
-(SQS→SNS), Excel, y MySQL→Excel.
+tape de una compañía. Núcleo de cómputo puro (sin BD ni AWS) reutilizado desde dos puntos de entrada:
+AWS Lambda (SQS→SNS, inline) y AWS Batch (mismo procesamiento para loan tapes grandes).
 
-- **Stack:** Python 3.10+, pandas, PyMySQL, boto3, pyarrow, openpyxl. Sin ORM (SQL crudo). Dataclasses.
+- **Stack:** Python 3.10+, polars (cómputo/IO de loan tape), PyMySQL, boto3, pyarrow. pandas solo en `spi_builder`. Sin ORM (SQL crudo). Dataclasses.
 - **Idioma:** docstrings, comentarios y docs en **español**; nombres de código/SQL en inglés.
 
 ## Comandos clave
@@ -13,13 +13,13 @@ tape de una compañía. Núcleo de cómputo puro (sin BD ni AWS) reutilizado des
 # Setup
 python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 
-# Correr DPD desde Excel (sin BD)
-python -m dpd.excel_runner --schedule "tests/Days Past Due.xlsx" --payment-tape "tests/Days Past Due.xlsx" --mode cascade --out resultado_dpd.xlsx
+# Correr el flujo localmente desde un evento JSON (sin AWS real)
+python -m dpd.local_runner --event evento.json
 
-# Correr DPD desde MySQL (solo lectura → Excel)
-python -m dpd.integrations.db_excel_runner --company-id 86 --company-code sistecredito
+# Ejecutar el job de Batch con un payload (mismo procesamiento que la Lambda)
+python -m dpd.batch_handler --payload '{"origin": "ENRICHER", ...}'
 
-# Tests (script aún no creado → /sdd.util.makeruntest). Smoke roto: ./tests/run.sh
+# Tests (runner Docker canónico, ver .sdd.json)
 ./scripts/run-tests.sh
 ```
 
@@ -28,7 +28,7 @@ python -m dpd.integrations.db_excel_runner --company-id 86 --company-code sistec
 1. **`company_id` (numérico, payment_tape) ≠ `company_code` (string, installments)** — no se unen tablas por compañía.
 2. **Dos fuentes de tasa de interés:** loan tape (`interest_rate`, para SPI) vs mensaje (`metadata.interest_rate`, para VPN). No mezclar.
 3. **`Decimal`** para todo cálculo monetario en el núcleo. Nunca `float`.
-4. **Lógica pura en `compute_from_data()`**; `compute(conn,...)` solo lee BD y delega.
+4. **Lógica pura en `compute_from_data()`** (modos); la lectura de BD vive en `db_reader` (loaders que devuelven polars). Los productos cargan datos y delegan en los modos.
 5. **`dpd_max` nunca decrece** (high-watermark histórico vía output previo en S3).
 
 ## Routing — dónde mirar según la tarea
@@ -52,4 +52,4 @@ python -m dpd.integrations.db_excel_runner --company-id 86 --company-code sistec
 
 - [dpd/modes/AGENTS.md](dpd/modes/AGENTS.md) — modos de asignación de pagos.
 - [dpd/products/AGENTS.md](dpd/products/AGENTS.md) — columnas derivadas del loan tape.
-- [dpd/integrations/AGENTS.md](dpd/integrations/AGENTS.md) — acceso a MySQL y runner MySQL→Excel.
+- [dpd/integrations/AGENTS.md](dpd/integrations/AGENTS.md) — acceso a MySQL (wrapper PyMySQL).
