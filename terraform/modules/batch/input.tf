@@ -1,10 +1,11 @@
-variable "environment" {
-  type = string
-}
-
 variable "name" {
   type        = string
-  description = "Nombre base del recurso (ej. dev-days-past-due-batch)."
+  description = "Nombre base del recurso (ej. dev-days-past-due-batch). Base para derivar los nombres de roles, policy, log group y demás recursos."
+}
+
+variable "environment" {
+  type        = string
+  description = "Environment (dev|stg|prod|mx). Usado para resolver subnets/security groups por defecto y la retención de logs."
 }
 
 variable "ecr_image_uri" {
@@ -12,26 +13,7 @@ variable "ecr_image_uri" {
   description = "URI completo de la imagen Docker en ECR (incluyendo tag)."
 }
 
-variable "job_role_arn" {
-  type        = string
-  description = "ARN del rol IAM que asume el contenedor del job (acceso a S3, SNS, Secrets)."
-}
-
-variable "execution_role_arn" {
-  type        = string
-  description = "ARN del rol IAM de ejecución ECS (pull de ECR, escritura en CloudWatch)."
-}
-
-variable "cloudwatch_log_group" {
-  type        = string
-  description = "Nombre del log group de CloudWatch donde el job escribe logs."
-}
-
-variable "aws_region" {
-  type    = string
-  default = "us-east-1"
-}
-
+# Compute / job sizing
 variable "max_vcpus" {
   type        = number
   default     = 16
@@ -50,18 +32,65 @@ variable "job_memory" {
   description = "Memoria en MB asignada al job."
 }
 
+variable "architectures" {
+  type        = list(string)
+  default     = ["X86_64"]
+  description = "Arquitectura de CPU del job. Fargate toma una sola (ej. [\"ARM64\"] o [\"X86_64\"])."
+}
+
+# Networking (opcional — si se omiten, se resuelven por environment)
 variable "subnet_ids" {
   type        = list(string)
-  description = "Subnets privadas donde corre el compute environment."
+  default     = []
+  description = "Subnets privadas donde corre el compute environment. Si está vacío, usa las subnets privadas por defecto de var.environment."
 }
 
 variable "security_group_ids" {
   type        = list(string)
-  description = "Security groups asignados al compute environment."
+  default     = []
+  description = "Security groups del compute environment. Si está vacío, usa los security groups por defecto de var.environment."
 }
 
 variable "environment_variables" {
   type        = map(string)
   default     = {}
   description = "Variables de entorno inyectadas en el contenedor del job."
+}
+
+# IAM (opcional — nombres derivados de var.name si se omiten)
+variable "job_role_name" {
+  type        = string
+  default     = null
+  description = "Nombre del rol IAM del job. Default: <name>-job-role."
+}
+
+variable "job_policy_name" {
+  type        = string
+  default     = null
+  description = "Nombre de la policy del job. Default: <name>-job-policy."
+}
+
+variable "job_policy_actions" {
+  type        = list(string)
+  default     = []
+  description = "Acciones permitidas (sobre '*') para el rol del job (acceso a S3, SNS, Secrets, etc.)."
+}
+
+variable "execution_role_name" {
+  type        = string
+  default     = null
+  description = "Nombre del rol de ejecución ECS. Default: <name>-execution-role."
+}
+
+# CloudWatch logs (opcional — derivado de var.name si se omite)
+variable "cloudwatch_log_group_name" {
+  type        = string
+  default     = null
+  description = "Nombre del log group de CloudWatch que crea el módulo. Default: /aws/batch/<name>."
+}
+
+variable "log_retention_in_days" {
+  type        = number
+  default     = null
+  description = "Días de retención de los logs. Default: 30 en prod, 7 en el resto."
 }

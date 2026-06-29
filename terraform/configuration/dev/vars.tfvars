@@ -30,3 +30,5 @@ batch_subnet_ids         = [
   "subnet-06f814e9677a7a796",
 ]
 batch_security_group_ids = ["sg-0031cc45b05258c36"]
+
+input_sns = ""

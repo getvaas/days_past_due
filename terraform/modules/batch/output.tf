@@ -22,3 +22,28 @@ output "compute_environment_arn" {
   value       = aws_batch_compute_environment.this.arn
   description = "ARN del compute environment."
 }
+output "job_role_arn" {
+  value = aws_iam_role.job_role.arn
+}
+
+output "job_role_name" {
+  value = aws_iam_role.job_role.name
+}
+
+output "execution_role_arn" {
+  value = aws_iam_role.execution_role.arn
+}
+
+output "execution_role_name" {
+  value = aws_iam_role.execution_role.name
+}
+
+output "cloudwatch_log_group_name" {
+  value       = aws_cloudwatch_log_group.this.name
+  description = "Nombre del log group de CloudWatch del job."
+}
+
+output "cloudwatch_log_group_arn" {
+  value       = aws_cloudwatch_log_group.this.arn
+  description = "ARN del log group de CloudWatch del job."
+}
